@@ -1,10 +1,13 @@
 package filemanager
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"rpanel/backend/modules/activity_logs"
 	"rpanel/backend/system"
@@ -544,4 +547,38 @@ func (h *Handler) Upload(c *gin.Context) {
 	}
 	activity_logs.Audit(c, activity_logs.ActionCreate, module, dir, gin.H{"op": "upload", "files": saved})
 	utils.Success(c, 201, "uploaded", gin.H{"files": saved})
+}
+
+// Search godoc
+// @Summary		Find files and folders by name below a directory
+// @Tags			file-manager
+// @Security		SessionCookie
+// @Param			path	query	string	true	"absolute directory path to search in"
+// @Param			q		query	string	true	"part of the name (case-insensitive)"
+// @Router			/file-manager/search [get]
+func (h *Handler) Search(c *gin.Context) {
+	p, ok := h.resolve1(c, c.Query("path"))
+	if !ok {
+		return
+	}
+	q := strings.TrimSpace(c.Query("q"))
+	if q == "" || len(q) > 100 {
+		utils.Error(c, 400, "enter 1-100 characters to search for")
+		return
+	}
+	if err := mustBeDir(p); err != nil {
+		fail(c, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	entries, truncated, err := Search(ctx, p, q, maxSearchResults)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if entries == nil {
+		entries = []Entry{}
+	}
+	utils.Success(c, 200, "ok", gin.H{"path": p, "query": q, "entries": entries, "truncated": truncated})
 }

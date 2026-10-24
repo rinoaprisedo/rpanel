@@ -166,7 +166,7 @@ function Docker() {
         {editor && (
           <div className="space-y-3">
             {editor.isNew && <Input label="Project name" placeholder="my-app" value={editor.name} onChange={(e) => setEditor({ ...editor, name: e.target.value })} />}
-            <textarea spellCheck={false} className="h-[50vh] w-full resize-none rounded-md border border-surface-border bg-white p-3 font-mono text-xs outline-none focus:border-primary" value={editor.content} onChange={(e) => setEditor({ ...editor, content: e.target.value })} />
+            <textarea spellCheck={false} className="h-[50vh] w-full resize-none rounded-md border border-surface-border bg-field p-3 font-mono text-xs outline-none focus:border-primary" value={editor.content} onChange={(e) => setEditor({ ...editor, content: e.target.value })} />
             <p className="text-xs text-text-secondary">Saving does not restart anything; press “Up” on the project to apply changes.</p>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setEditor(null)}>Close</Button>
@@ -200,7 +200,7 @@ function Area({ label, value, onChange, placeholder }) {
     <div className="flex flex-col gap-1">
       <label className="text-xs font-medium uppercase tracking-[.05em] text-text-secondary">{label}</label>
       <textarea rows={3} spellCheck={false} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border-[1.5px] border-surface-border bg-white p-3 font-mono text-xs outline-none focus:border-primary" />
+        className="w-full rounded-md border-[1.5px] border-surface-border bg-field p-3 font-mono text-xs outline-none focus:border-primary" />
     </div>
   )
 }

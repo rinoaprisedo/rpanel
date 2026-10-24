@@ -26,7 +26,7 @@ var ErrNotAllowed = errors.New("command not allowed")
 // allowed lists the binaries panel modules may execute.
 var allowed = map[string]bool{
 	"nginx": true, "certbot": true, "systemctl": true, "ufw": true,
-	"apt-get": true, "dpkg": true, "crontab": true,
+	"apt-get": true, "apt-cache": true, "dpkg": true, "crontab": true,
 	"mysql": true, "mysqldump": true, "psql": true, "pg_dump": true, "pg_restore": true,
 	"docker": true, "zip": true, "unzip": true, "tar": true,
 	"chmod": true, "runuser": true, "chown": true, "ln": true, "id": true,

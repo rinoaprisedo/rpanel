@@ -110,6 +110,7 @@ func seedMenus(db *gorm.DB) []uint64 {
 				{Name: "Docker", Icon: "Container", Path: "docker"},
 				{Name: "Cron", Icon: "Clock", Path: "cron"},
 				{Name: "Firewall", Icon: "ShieldCheck", Path: "firewall"},
+				{Name: "App Store", Icon: "Store", Path: "app-store"},
 			},
 		},
 		{

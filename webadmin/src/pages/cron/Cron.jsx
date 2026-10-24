@@ -101,7 +101,7 @@ function Cron() {
             {form.type === 'shell' ? (
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium uppercase tracking-[.05em] text-text-secondary">Script (bash)</label>
-                <textarea rows={8} spellCheck={false} className="w-full rounded-md border-[1.5px] border-surface-border bg-white p-3 font-mono text-xs outline-none focus:border-primary" placeholder={'#!/bin/bash\ntar czf /www/backup/site.tgz /www/wwwroot/example.com'} value={form.command} onChange={set('command')} />
+                <textarea rows={8} spellCheck={false} className="w-full rounded-md border-[1.5px] border-surface-border bg-field p-3 font-mono text-xs outline-none focus:border-primary" placeholder={'#!/bin/bash\ntar czf /www/backup/site.tgz /www/wwwroot/example.com'} value={form.command} onChange={set('command')} />
               </div>
             ) : (
               <Input label="URL" placeholder="https://example.com/cron.php?key=…" value={form.command} onChange={set('command')} />

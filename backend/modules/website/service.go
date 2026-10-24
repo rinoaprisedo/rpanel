@@ -3,6 +3,8 @@ package website
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +28,7 @@ var (
 
 // Settings are the host-specific paths and defaults of the manager.
 type Settings struct {
+	CertDir      string // Let's Encrypt "live" directory; default /etc/letsencrypt/live
 	WebRoot      string
 	AcmeRoot     string
 	LogDir       string
@@ -311,7 +314,11 @@ func (s *Service) Env(ctx context.Context) Env {
 	e.Certbot = err == nil
 	dirs, _ := filepath.Glob("/etc/php/*/fpm")
 	for _, d := range dirs {
-		e.PHPVersion = append(e.PHPVersion, filepath.Base(filepath.Dir(d)))
+		v := filepath.Base(filepath.Dir(d))
+		// Uninstalling PHP keeps /etc/php/<v>; only the FPM binary proves it is still there.
+		if _, err := os.Stat("/usr/sbin/php-fpm" + v); err == nil {
+			e.PHPVersion = append(e.PHPVersion, v)
+		}
 	}
 	if e.PHPVersion == nil {
 		e.PHPVersion = []string{}
@@ -343,4 +350,172 @@ func (s *Service) Install(ctx context.Context, component, version string) error 
 		return fmt.Errorf("install failed: %s", lastLines(res.Stderr, 6))
 	}
 	return nil
+}
+
+// DirEntry is one sub-directory offered by the folder picker.
+type DirEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// DirListing is the folder picker's view of one directory inside the web root.
+type DirListing struct {
+	Root   string     `json:"root"`
+	Path   string     `json:"path"`
+	Parent string     `json:"parent"` // empty at the web root
+	Dirs   []DirEntry `json:"dirs"`
+}
+
+// ListDirs lists the sub-directories of p (default: the web root). It never
+// leaves the web root and never follows symlinks, so the picker cannot be used
+// to browse the rest of the server.
+func (s *Service) ListDirs(p string) (*DirListing, error) {
+	if p == "" {
+		p = s.cfg.WebRoot
+	}
+	dir, err := s.webRootPath(p)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("%w: folder does not exist", ErrBadInput)
+		}
+		return nil, err
+	}
+	out := &DirListing{Root: filepath.Clean(s.cfg.WebRoot), Path: dir, Dirs: []DirEntry{}}
+	if dir != out.Root {
+		out.Parent = filepath.Dir(dir)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Type()&os.ModeSymlink != 0 || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		out.Dirs = append(out.Dirs, DirEntry{Name: e.Name(), Path: filepath.Join(dir, e.Name())})
+	}
+	return out, nil
+}
+
+// mutate applies change to a site, regenerates its vhost (validated with nginx -t and
+// rolled back on failure) and stores the result.
+func (s *Service) mutate(ctx context.Context, uuid string, actor *uint64, change func(w *Website) error) (*Website, error) {
+	w, err := s.Get(uuid)
+	if err != nil {
+		return nil, err
+	}
+	old := *w
+	if err := change(w); err != nil {
+		return nil, err
+	}
+	if err := s.ng.Apply(ctx, w, w.Status == StatusRunning); err != nil {
+		return nil, err
+	}
+	w.UpdatedBy = actor
+	if err := s.db.Save(w).Error; err != nil {
+		_ = s.ng.Apply(ctx, &old, old.Status == StatusRunning)
+		return nil, err
+	}
+	return w, nil
+}
+
+// SetProxyRules replaces the reverse-proxy rules of a site.
+func (s *Service) SetProxyRules(ctx context.Context, uuid string, rules []ProxyRule, actor *uint64) (*Website, error) {
+	clean := make([]ProxyRule, 0, len(rules))
+	for _, r := range rules {
+		r.Name, r.Path, r.Target = strings.TrimSpace(r.Name), strings.TrimSpace(r.Path), strings.TrimSpace(r.Target)
+		clean = append(clean, r)
+	}
+	return s.mutate(ctx, uuid, actor, func(w *Website) error {
+		w.ProxyRules = clean
+		return validateRules(clean)
+	})
+}
+
+// SetExtraConfig replaces the custom nginx directives of a site.
+func (s *Service) SetExtraConfig(ctx context.Context, uuid, text string, actor *uint64) (*Website, error) {
+	text = strings.TrimRight(strings.ReplaceAll(text, "\r\n", "\n"), " \t\n")
+	return s.mutate(ctx, uuid, actor, func(w *Website) error {
+		w.ExtraConfig = text
+		return validateExtra(text)
+	})
+}
+
+// DisableSSL switches the vhost back to plain HTTP. The certificate stays on disk.
+func (s *Service) DisableSSL(ctx context.Context, uuid string, actor *uint64) (*Website, error) {
+	return s.mutate(ctx, uuid, actor, func(w *Website) error {
+		w.SSLEnabled, w.ForceHTTPS = false, false
+		return nil
+	})
+}
+
+// SiteConfig is what the config editor shows: the editable directives and the
+// complete vhost nginx actually runs.
+type SiteConfig struct {
+	ExtraConfig string `json:"extra_config"`
+	Rendered    string `json:"rendered"`
+}
+
+func (s *Service) Config(uuid string) (*SiteConfig, error) {
+	w, err := s.Get(uuid)
+	if err != nil {
+		return nil, err
+	}
+	text, err := s.ng.Render(w)
+	if err != nil {
+		return nil, err
+	}
+	return &SiteConfig{ExtraConfig: w.ExtraConfig, Rendered: text}, nil
+}
+
+// CertInfo describes the certificate currently on disk for a domain.
+type CertInfo struct {
+	Issuer   string    `json:"issuer"`
+	Names    []string  `json:"names"`
+	NotAfter time.Time `json:"not_after"`
+	DaysLeft int       `json:"days_left"`
+}
+
+type SSLStatus struct {
+	Enabled    bool      `json:"enabled"`
+	ForceHTTPS bool      `json:"force_https"`
+	Cert       *CertInfo `json:"cert"`
+}
+
+func (s *Service) SSLStatus(uuid string) (*SSLStatus, error) {
+	w, err := s.Get(uuid)
+	if err != nil {
+		return nil, err
+	}
+	st := &SSLStatus{Enabled: w.SSLEnabled, ForceHTTPS: w.ForceHTTPS}
+	st.Cert = ReadCert(s.cfg.CertDir, w.Domain)
+	return st, nil
+}
+
+// ReadCert describes the Let's Encrypt certificate on disk for domain, or nil when there is none.
+// certDir defaults to /etc/letsencrypt/live.
+func ReadCert(certDir, domain string) *CertInfo {
+	if certDir == "" {
+		certDir = "/etc/letsencrypt/live"
+	}
+	pemBytes, err := os.ReadFile(filepath.Join(certDir, domain, "fullchain.pem"))
+	if err != nil {
+		return nil
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil
+	}
+	info := &CertInfo{
+		Issuer: cert.Issuer.CommonName, Names: cert.DNSNames, NotAfter: cert.NotAfter,
+		DaysLeft: int(time.Until(cert.NotAfter).Hours() / 24),
+	}
+	if info.Issuer == "" && len(cert.Issuer.Organization) > 0 {
+		info.Issuer = cert.Issuer.Organization[0]
+	}
+	return info
 }

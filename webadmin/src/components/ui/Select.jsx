@@ -12,7 +12,7 @@ const Select = forwardRef(function Select({ label, error, className, children, .
         <select
           ref={ref}
           className={cn(
-            'h-[42px] w-full appearance-none rounded-md border-[1.5px] border-surface-border bg-white px-3 pr-9 text-sm text-text-primary outline-none transition-colors duration-150 focus:border-primary',
+            'h-[42px] w-full appearance-none rounded-md border-[1.5px] border-surface-border bg-field px-3 pr-9 text-sm text-text-primary outline-none transition-colors duration-150 focus:border-primary',
             error && 'border-danger',
             className,
           )}

@@ -2,9 +2,12 @@ package filemanager
 
 import (
 	"archive/zip"
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -161,5 +164,54 @@ func TestUnzipRejectsSymlinkDirEscape(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outside, "pwn.txt")); err == nil {
 		t.Fatal("file written outside")
+	}
+}
+
+func TestSearchFindsNamesBelowDirAndStaysInside(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"site/public", "site/Reports-2026", "other"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	os.WriteFile(filepath.Join(root, "site/public/Report.PHP"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(root, "other/notes.txt"), []byte("x"), 0o644)
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "report-secret.txt"), []byte("x"), 0o644)
+	if err := os.Symlink(outside, filepath.Join(root, "other/link")); err != nil {
+		t.Fatal(err)
+	}
+
+	got, truncated, err := Search(context.Background(), root, "  REPORT ", 50)
+	if err != nil || truncated {
+		t.Fatalf("err=%v truncated=%v", err, truncated)
+	}
+	var names []string
+	for _, e := range got {
+		names = append(names, e.Name)
+	}
+	want := "Reports-2026,Report.PHP" // folders first, then files; case-insensitive
+	if strings.Join(names, ",") != want {
+		t.Errorf("got %v, want %s", names, want)
+	}
+	for _, e := range got {
+		if strings.HasPrefix(e.Path, outside) {
+			t.Errorf("search followed a symlink out of the directory: %s", e.Path)
+		}
+	}
+	if got[1].Path != filepath.Join(root, "site/public/Report.PHP") {
+		t.Errorf("entries must carry their real parent directory: %s", got[1].Path)
+	}
+	if _, _, err := Search(context.Background(), root, "   ", 5); err == nil {
+		t.Error("an empty query must be rejected")
+	}
+}
+
+func TestSearchStopsAtTheResultLimit(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 12; i++ {
+		os.WriteFile(filepath.Join(root, fmt.Sprintf("log-%02d.txt", i)), nil, 0o644)
+	}
+	got, truncated, err := Search(context.Background(), root, "log", 5)
+	if err != nil || len(got) != 5 || !truncated {
+		t.Errorf("len=%d truncated=%v err=%v", len(got), truncated, err)
 	}
 }

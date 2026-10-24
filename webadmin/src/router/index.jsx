@@ -14,6 +14,7 @@ import ActivityLogs from '../pages/activity_logs/ActivityLogs'
 import FileManager from '../pages/file_manager/FileManager'
 import Terminal from '../pages/terminal/Terminal'
 import Websites from '../pages/websites/Websites'
+import AppStore from '../pages/app_store/AppStore'
 import Databases from '../pages/databases/Databases'
 import Docker from '../pages/docker/Docker'
 import Cron from '../pages/cron/Cron'
@@ -111,6 +112,14 @@ function AppRouter() {
           element={
             <ProtectedRoute menuKey="websites">
               <Websites />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app-store"
+          element={
+            <ProtectedRoute menuKey="app-store">
+              <AppStore />
             </ProtectedRoute>
           }
         />

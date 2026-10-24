@@ -6,6 +6,7 @@ import { Toaster } from 'react-hot-toast'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import './index.css'
+import './store/themeStore'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,9 +27,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           toastOptions={{
             duration: 3500,
             style: {
-              background: 'var(--toast-bg, #ffffff)',
-              color: '#1a1917',
-              border: '1px solid #e2e1db',
+              background: 'rgb(var(--c-card))',
+              color: 'rgb(var(--c-text))',
+              border: '1px solid rgb(var(--c-border))',
               borderRadius: '10px',
               boxShadow: '0 4px 20px rgba(0,0,0,.18)',
               padding: '10px 14px',

@@ -6,5 +6,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g := rg.Group("/dashboard")
 	g.GET("/overview", guard("/", "view"), h.Overview)
 	g.GET("/history", guard("/", "view"), h.History)
+	g.GET("/traffic", guard("/", "view"), h.Traffic)
+	g.GET("/insights", guard("/", "view"), h.Insights)
 	g.GET("/processes", guard("/", "view"), h.Processes)
 }

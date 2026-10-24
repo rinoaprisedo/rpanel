@@ -22,7 +22,78 @@ var (
 	phpVerRe    = regexp.MustCompile(`^[0-9]\.[0-9]$`)
 	proxyRe     = regexp.MustCompile(`^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$`)
 	ErrBadInput = errors.New("invalid input")
+
+	rulePathRe = regexp.MustCompile(`^/[A-Za-z0-9._~/-]*$`)
 )
+
+const (
+	maxProxyRules  = 30
+	maxExtraConfig = 20000
+)
+
+// validateRules checks every field that is interpolated into a location block.
+func validateRules(rules []ProxyRule) error {
+	if len(rules) > maxProxyRules {
+		return fmt.Errorf("%w: at most %d proxy rules", ErrBadInput, maxProxyRules)
+	}
+	seen := map[string]bool{}
+	for _, r := range rules {
+		switch {
+		case !rulePathRe.MatchString(r.Path) || strings.Contains(r.Path, "..") || len(r.Path) > 200:
+			return fmt.Errorf("%w: proxy path %q (use letters, digits and . _ ~ - /, starting with /)", ErrBadInput, r.Path)
+		case r.Path == "/":
+			return fmt.Errorf("%w: use a sub-path such as /api/ (the site's own / is managed by its type)", ErrBadInput)
+		case strings.HasPrefix(r.Path, "/.well-known"):
+			return fmt.Errorf("%w: /.well-known is reserved for certificate validation", ErrBadInput)
+		case seen[r.Path]:
+			return fmt.Errorf("%w: duplicate proxy path %s", ErrBadInput, r.Path)
+		case !proxyRe.MatchString(r.Target) || strings.Contains(r.Target, ".."):
+			return fmt.Errorf("%w: proxy target %q (expected http://host:port or https://host)", ErrBadInput, r.Target)
+		case len(r.Name) > 60 || strings.ContainsAny(r.Name, "\r\n\x00"):
+			return fmt.Errorf("%w: rule name", ErrBadInput)
+		}
+		seen[r.Path] = true
+	}
+	return nil
+}
+
+// validateExtra rejects text that could close the server block it is pasted into.
+// nginx -t still has the last word; this keeps one stray "}" from smuggling in a
+// whole second server block that happens to be balanced.
+func validateExtra(text string) error {
+	if len(text) > maxExtraConfig || strings.ContainsRune(text, 0) {
+		return fmt.Errorf("%w: custom config is too large or contains NUL", ErrBadInput)
+	}
+	depth := 0
+	var quote byte
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		switch {
+		case quote != 0:
+			if c == '\\' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '#':
+			for i < len(text) && text[i] != '\n' {
+				i++
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '{':
+			depth++
+		case c == '}':
+			if depth--; depth < 0 {
+				return fmt.Errorf("%w: unbalanced } in custom config", ErrBadInput)
+			}
+		}
+	}
+	if depth != 0 || quote != 0 {
+		return fmt.Errorf("%w: unbalanced braces or quotes in custom config", ErrBadInput)
+	}
+	return nil
+}
 
 // Validate checks every site field that is interpolated into the nginx config.
 func Validate(w *Website) error {
@@ -44,7 +115,10 @@ func Validate(w *Website) error {
 	default:
 		return fmt.Errorf("%w: type", ErrBadInput)
 	}
-	return nil
+	if err := validateRules(w.ProxyRules); err != nil {
+		return err
+	}
+	return validateExtra(w.ExtraConfig)
 }
 
 var vhostTmpl = template.Must(template.New("vhost").Parse(`# Managed by RPanel â€” manual edits will be overwritten.
@@ -84,6 +158,24 @@ var vhostTmpl = template.Must(template.New("vhost").Parse(`# Managed by RPanel â
     }
     {{- end}}
 {{- end}}
+{{define "extras" -}}
+{{range .ProxyRules}}{{if .Enabled}}
+    location {{.Path}} {
+        proxy_pass {{.Target}};
+        proxy_http_version 1.1;
+        proxy_set_header Host {{if .PassHost}}$host{{else}}$proxy_host{{end}};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $http_connection;{{if not .PassHost}}
+        proxy_ssl_server_name on;{{end}}
+    }
+{{end}}{{end}}{{if .ExtraConfig}}
+    # custom directives
+{{.ExtraConfig}}
+{{end}}
+{{- end}}
 {{define "common" -}}
     server_name {{.Domain}};
     access_log {{.LogDir}}/{{.Domain}}.access.log;
@@ -104,6 +196,7 @@ server {
     }
 {{- else}}
 {{template "body" .}}
+{{template "extras" .}}
 {{- end}}
 }
 {{if .SSL}}
@@ -116,6 +209,7 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:SSL:10m;
 {{template "body" .}}
+{{template "extras" .}}
 }
 {{end}}`))
 

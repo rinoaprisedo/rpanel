@@ -19,9 +19,22 @@ export function darkenHex(hex, amount = 0.15) {
   return `${r} ${g} ${b}`
 }
 
+// Mixes a hex color toward white; used on dark backgrounds, where a dark brand
+// color (the default is #35494d) would almost vanish.
+export function lightenHex(hex, amount) {
+  const clean = hex.replace('#', '')
+  const ch = [0, 2, 4].map((i) => Math.round(parseInt(clean.slice(i, i + 2), 16) * (1 - amount) + 255 * amount))
+  return ch.join(' ')
+}
+
 export function applyPrimaryColor(hex) {
   if (!hex) return
   const root = document.documentElement
+  if (root.classList.contains('dark')) {
+    root.style.setProperty('--color-primary-rgb', lightenHex(hex, 0.28))
+    root.style.setProperty('--color-primary-dark-rgb', lightenHex(hex, 0.18))
+    return
+  }
   root.style.setProperty('--color-primary-rgb', hexToRgbChannels(hex))
   root.style.setProperty('--color-primary-dark-rgb', darkenHex(hex))
 }

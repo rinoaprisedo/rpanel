@@ -4,6 +4,7 @@ const base = import.meta.env.VITE_API_URL || 'http://localhost:8800/api/v1'
 
 export const getRoots = () => client.get('/file-manager/roots').then((r) => r.data)
 export const listDir = (path) => client.get('/file-manager/list', { params: { path } }).then((r) => r.data)
+export const searchFiles = (path, q) => client.get('/file-manager/search', { params: { path, q } }).then((r) => r.data)
 export const readFile = (path) => client.get('/file-manager/read', { params: { path } }).then((r) => r.data)
 export const writeFile = (path, content) => client.put('/file-manager/write', { path, content }).then((r) => r.data)
 export const mkdir = (path) => client.post('/file-manager/mkdir', { path }).then((r) => r.data)

@@ -28,6 +28,7 @@ type Point struct {
 	NetRxBps   float64 `json:"net_rx"`
 	NetTxBps   float64 `json:"net_tx"`
 	Load1      float64 `json:"load1"`
+	Disk       float64 `json:"disk"` // usage of the root file system, percent
 }
 
 type DiskInfo struct {
@@ -78,6 +79,10 @@ type Collector struct {
 	lastRx  uint64
 	lastTx  uint64
 	lastAt  time.Time
+
+	// long keeps one averaged point per minute for up to 7 days (in memory only).
+	long []Point
+	acc  minuteAcc
 }
 
 func NewCollector() *Collector { return &Collector{} }
@@ -142,14 +147,31 @@ func (c *Collector) sample(ctx context.Context) {
 	}
 	c.lastRx, c.lastTx, c.lastAt = o.NetRx, o.NetTx, now
 	c.current = o
-	c.history = append(c.history, Point{
+	pt := Point{
 		Time: now.Unix(), CPU: o.CPU, MemPercent: o.MemPct,
-		NetRxBps: o.NetRxBps, NetTxBps: o.NetTxBps, Load1: o.Load1,
-	})
+		NetRxBps: o.NetRxBps, NetTxBps: o.NetTxBps, Load1: o.Load1, Disk: rootDisk(o.Disks),
+	}
+	c.history = append(c.history, pt)
 	if len(c.history) > historySize {
 		c.history = c.history[len(c.history)-historySize:]
 	}
+	c.addLong(pt)
 }
+
+// rootDisk picks the file system the panel and sites live on: "/" if present, else the first.
+func rootDisk(ds []DiskInfo) float64 {
+	for _, d := range ds {
+		if d.Mount == "/" {
+			return d.Percent
+		}
+	}
+	if len(ds) > 0 {
+		return ds[0].Percent
+	}
+	return 0
+}
+
+var readOnlyFS = map[string]bool{"squashfs": true, "iso9660": true, "udf": true}
 
 func collectDisks(ctx context.Context) []DiskInfo {
 	parts, err := disk.PartitionsWithContext(ctx, false)
@@ -159,8 +181,8 @@ func collectDisks(ctx context.Context) []DiskInfo {
 	seen := map[string]bool{}
 	out := []DiskInfo{}
 	for _, p := range parts {
-		if seen[p.Device] || seen[p.Mountpoint] {
-			continue
+		if seen[p.Device] || seen[p.Mountpoint] || readOnlyFS[p.Fstype] {
+			continue // snap images and ISOs are always 100% full and never actionable
 		}
 		u, err := disk.UsageWithContext(ctx, p.Mountpoint)
 		if err != nil || u.Total == 0 {

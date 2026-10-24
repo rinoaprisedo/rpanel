@@ -11,6 +11,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g := rg.Group("/file-manager")
 	g.GET("/roots", guard(m, "view"), h.Roots)
 	g.GET("/list", guard(m, "view"), h.List)
+	g.GET("/search", guard(m, "view"), h.Search)
 	g.GET("/read", guard(m, "view"), h.Read)
 	g.GET("/download", guard(m, "view"), h.Download)
 

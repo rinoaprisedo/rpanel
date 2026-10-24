@@ -1,14 +1,19 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Play, Square, Lock, ScrollText, Trash2, Globe } from 'lucide-react'
+import { Plus, Globe, FolderSearch, Search, X, CircleCheck, CircleX, Lock, TriangleAlert } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Select from '../../components/ui/Select'
-import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Skeleton from '../../components/ui/Skeleton'
+import FolderPicker from './FolderPicker'
+import SiteManager from './SiteManager'
+import SiteCard, { TYPES } from './SiteCard'
+import { cn } from '../../utils/cn'
+import { getTraffic, getInsights } from '../../api/dashboard'
 import * as api from '../../api/websites'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
@@ -16,17 +21,25 @@ const emptyForm = { domain: '', type: 'static', root_dir: '', php_version: '', p
 
 function Websites() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const { data, isLoading } = useQuery({ queryKey: ['websites'], queryFn: api.getWebsites })
   const { data: envRes } = useQuery({ queryKey: ['websites-env'], queryFn: api.getWebsiteEnv })
   const env = envRes?.data
-  const sites = data?.data || []
+  const sites = useMemo(() => data?.data || [], [data])
+  // Traffic and certificate days come from the dashboard API; the page works without them.
+  const { data: trafficRes } = useQuery({ queryKey: ['dash-traffic', '24h', ''], queryFn: () => getTraffic('24h', ''), retry: false, refetchInterval: 60000 })
+  const { data: insRes } = useQuery({ queryKey: ['dash-insights'], queryFn: getInsights, retry: false, refetchInterval: 30000 })
+  const statsBy = useMemo(() => Object.fromEntries((trafficRes?.data?.sites || []).map((x) => [x.domain, x])), [trafficRes])
+  const daysBy = useMemo(() => Object.fromEntries((insRes?.data?.sites || []).map((x) => [x.domain, x.days_left])), [insRes])
+  const [q, setQ] = useState('')
+  const [filter, setFilter] = useState('all')
 
   const [form, setForm] = useState(null)
+  const [picking, setPicking] = useState(false)
   const [del, setDel] = useState(null)
   const [deleteFiles, setDeleteFiles] = useState(false)
   const [logs, setLogs] = useState(null) // { site, type, text }
-  const [sslSite, setSslSite] = useState(null)
-  const [email, setEmail] = useState('')
+  const [manage, setManage] = useState(null) // { uuid, tab }
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['websites'] })
   const act = (fn, ok, after) => ({
@@ -36,8 +49,6 @@ function Websites() {
   })
   const create = useMutation(act((d) => api.createWebsite(d), 'Website created', () => setForm(null)))
   const toggle = useMutation(act((s) => (s.status === 'running' ? api.stopWebsite(s.uuid) : api.startWebsite(s.uuid)), 'Updated'))
-  const forceHttps = useMutation(act((s) => api.updateWebsite(s.uuid, { force_https: !s.force_https }), 'Updated'))
-  const ssl = useMutation(act((s) => api.issueSSL(s.uuid, email), 'SSL enabled', () => setSslSite(null)))
   const remove = useMutation(act((s) => api.deleteWebsite(s.uuid, deleteFiles), 'Website deleted', () => setDel(null)))
   const install = useMutation({
     mutationFn: ({ component, version }) => api.installComponent(component, version),
@@ -63,89 +74,146 @@ function Websites() {
     create.mutate(body)
   }
 
+  const counts = {
+    all: sites.length,
+    running: sites.filter((s) => s.status === 'running').length,
+    stopped: sites.filter((s) => s.status !== 'running').length,
+    nohttps: sites.filter((s) => !s.ssl_enabled).length,
+  }
+  const attention = sites.filter((s) => s.status === 'running' && ((s.ssl_enabled && daysBy[s.domain] != null && daysBy[s.domain] < 14) || statsBy[s.domain]?.server_err > 0)).length
+  const shown = sites.filter((s) => {
+    if (filter === 'running' && s.status !== 'running') return false
+    if (filter === 'stopped' && s.status === 'running') return false
+    if (filter === 'nohttps' && s.ssl_enabled) return false
+    if (['static', 'php', 'proxy'].includes(filter) && s.type !== filter) return false
+    return !q.trim() || s.domain.includes(q.trim().toLowerCase())
+  })
+
+  const Chip = ({ ok, children }) => (
+    <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+      {ok ? <CircleCheck size={13} className="text-success" /> : <CircleX size={13} className="text-danger" />}{children}
+    </span>
+  )
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-surface-border bg-surface-card p-4 text-sm">
-        <div className="flex flex-wrap items-center gap-4 text-text-secondary">
-          <span>Nginx: {env?.nginx ? <span className="text-success">{env.nginx_version || 'installed'}</span> : <span className="text-danger">not installed</span>}</span>
-          <span>Certbot: {env?.certbot ? <span className="text-success">installed</span> : <span className="text-danger">not installed</span>}</span>
-          <span>PHP: {env?.php_versions?.length ? <span className="text-success">{env.php_versions.join(', ')}</span> : <span className="text-text-secondary">none</span>}</span>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-text-primary">Websites</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Chip ok={env?.nginx}>Nginx {env?.nginx ? (env.nginx_version || '').replace('nginx/', '') : 'missing'}</Chip>
+            <Chip ok={env?.certbot}>Certbot {env?.certbot ? '' : 'missing'}</Chip>
+            <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">PHP {env?.php_versions?.length ? env.php_versions.join(', ') : <button onClick={() => navigate('/app-store')} className="text-primary hover:underline">not installed — App Store</button>}</span>
+            {env && !env.nginx && <button disabled={install.isPending} onClick={() => install.mutate({ component: 'nginx' })} className="text-xs font-medium text-primary hover:underline">Install Nginx</button>}
+            {env && !env.certbot && <button disabled={install.isPending} onClick={() => install.mutate({ component: 'certbot' })} className="text-xs font-medium text-primary hover:underline">Install Certbot</button>}
+          </div>
         </div>
-        <div className="flex gap-2">
-          {env && !env.nginx && <Button variant="secondary" disabled={install.isPending} onClick={() => install.mutate({ component: 'nginx' })}>Install Nginx</Button>}
-          {env && !env.certbot && <Button variant="secondary" disabled={install.isPending} onClick={() => install.mutate({ component: 'certbot' })}>Install Certbot</Button>}
-          <Button variant="secondary" disabled={install.isPending} onClick={() => { const v = window.prompt('PHP version to install (e.g. 8.3)'); if (v) install.mutate({ component: 'php', version: v }) }}>Install PHP</Button>
-          <Button onClick={() => setForm({ ...emptyForm, php_version: env?.php_versions?.[0] || '' })}><Plus size={14} />Add website</Button>
-        </div>
+        <Button onClick={() => setForm({ ...emptyForm, php_version: env?.php_versions?.[0] || '' })}><Plus size={14} />Add website</Button>
       </div>
       {install.isPending && <p className="text-sm text-text-secondary">Installing via apt, this can take a few minutes…</p>}
 
-      <div className="overflow-x-auto rounded-lg border border-surface-border bg-surface-card">
-        {isLoading ? <Skeleton className="h-48 w-full" /> : (
-          <table className="w-full text-sm">
-            <thead className="border-b border-surface-border text-left text-xs uppercase text-text-secondary">
-              <tr><th className="p-3">Domain</th><th className="p-3">Type</th><th className="p-3">Target</th><th className="p-3">Status</th><th className="p-3">SSL</th><th className="p-3 text-right">Actions</th></tr>
-            </thead>
-            <tbody>
-              {sites.map((s) => (
-                <tr key={s.uuid} className="border-b border-surface-border last:border-0">
-                  <td className="p-3 font-medium text-text-primary"><Globe size={13} className="mr-1 inline text-text-secondary" />{s.domain}</td>
-                  <td className="p-3 text-text-secondary">{s.type}{s.php_version ? ` ${s.php_version}` : ''}</td>
-                  <td className="max-w-[16rem] truncate p-3 font-mono text-xs text-text-secondary">{s.type === 'proxy' ? s.proxy_target : s.root_dir}</td>
-                  <td className="p-3"><Badge variant={s.status === 'running' ? 'success' : 'neutral'}>{s.status}</Badge></td>
-                  <td className="p-3">{s.ssl_enabled ? <Badge variant="success">{s.force_https ? 'https only' : 'enabled'}</Badge> : <Badge>off</Badge>}</td>
-                  <td className="p-3">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" title={s.status === 'running' ? 'Stop' : 'Start'} onClick={() => toggle.mutate(s)}>{s.status === 'running' ? <Square size={14} /> : <Play size={14} />}</Button>
-                      {!s.ssl_enabled
-                        ? <Button variant="ghost" title="Get SSL certificate" onClick={() => { setEmail(''); setSslSite(s) }}><Lock size={14} /></Button>
-                        : <Button variant="ghost" title="Toggle force HTTPS" onClick={() => forceHttps.mutate(s)}>{s.force_https ? 'HTTP ok' : 'Force HTTPS'}</Button>}
-                      <Button variant="ghost" title="Logs" onClick={() => openLogs(s, 'error')}><ScrollText size={14} /></Button>
-                      <Button variant="ghost" title="Delete" onClick={() => { setDeleteFiles(false); setDel(s) }}><Trash2 size={14} className="text-danger" /></Button>
-                    </div>
-                  </td>
-                </tr>
+      {sites.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { k: 'all', label: 'Websites', value: counts.all, icon: Globe },
+              { k: 'running', label: 'Running', value: counts.running, icon: CircleCheck, tone: 'text-success' },
+              { k: 'nohttps', label: 'Without HTTPS', value: counts.nohttps, icon: Lock, tone: counts.nohttps ? 'text-warning' : '' },
+              { k: 'attention', label: 'Need attention', value: attention, icon: TriangleAlert, tone: attention ? 'text-danger' : '' },
+            ].map((c) => (
+              <button key={c.k} onClick={() => c.k !== 'attention' && setFilter(filter === c.k ? 'all' : c.k)} className={cn('flex items-center gap-3 rounded-lg border bg-surface-card p-3.5 text-left transition-colors', filter === c.k ? 'border-primary' : 'border-surface-border hover:border-surface-border-hover')}>
+                <span className={cn('flex h-9 w-9 items-center justify-center rounded-md bg-surface-hover text-text-secondary', c.tone)}><c.icon size={17} /></span>
+                <span><span className="block text-xl font-semibold leading-none text-text-primary">{c.value}</span><span className="text-xs text-text-tertiary">{c.label}</span></span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full max-w-xs">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search domain…" className="h-[38px] w-full rounded-md border-[1.5px] border-surface-border bg-field pl-9 pr-8 text-sm text-text-primary outline-none transition-colors focus:border-primary" />
+              {q && <button onClick={() => setQ('')} aria-label="Clear" className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary"><X size={14} /></button>}
+            </div>
+            <div className="inline-flex flex-wrap rounded-md border border-surface-border bg-surface-card p-0.5">
+              {[['all', 'All'], ['running', 'Running'], ['stopped', 'Stopped'], ['static', 'Static'], ['php', 'PHP'], ['proxy', 'Proxy']].map(([k, label]) => (
+                <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} className={cn('h-8 rounded-[8px] px-3 text-[13px] font-medium transition-colors', filter === k ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-hover')}>{label}</button>
               ))}
-              {!sites.length && <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No websites yet</td></tr>}
-            </tbody>
-          </table>
-        )}
-      </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isLoading ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-48 w-full" />)}</div>
+      ) : sites.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-surface-border-hover px-6 py-14 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary"><Globe size={22} /></span>
+          <p className="mt-3 text-sm font-semibold text-text-primary">No websites yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-text-secondary">Host a static site, a PHP app or put a reverse proxy in front of a service. Nginx config and HTTPS are handled for you.</p>
+          <Button className="mt-4" onClick={() => setForm({ ...emptyForm, php_version: env?.php_versions?.[0] || '' })}><Plus size={14} />Add your first website</Button>
+        </div>
+      ) : shown.length === 0 ? (
+        <p className="rounded-lg border border-surface-border bg-surface-card py-12 text-center text-sm text-text-secondary">No website matches your filter.</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {shown.map((s) => (
+            <SiteCard
+              key={s.uuid} site={s} stats={statsBy[s.domain]} daysLeft={s.ssl_enabled ? daysBy[s.domain] : null} busy={toggle.isPending}
+              onManage={() => setManage({ uuid: s.uuid, tab: 'Config' })}
+              onToggle={() => toggle.mutate(s)}
+              onLogs={() => openLogs(s, 'error')}
+              onDelete={() => { setDeleteFiles(false); setDel(s) }}
+              onFiles={() => navigate('/file-manager')}
+            />
+          ))}
+        </div>
+      )}
 
       <Modal open={!!form} onClose={() => setForm(null)} title="Add website">
         {form && (
           <form onSubmit={submit} className="space-y-4">
             <Input label="Domain" placeholder="example.com" value={form.domain} onChange={set('domain')} autoFocus />
-            <Select label="Type" value={form.type} onChange={set('type')}>
-              <option value="static">Static</option>
-              <option value="php">PHP (FPM)</option>
-              <option value="proxy">Reverse proxy</option>
-            </Select>
-            {form.type !== 'proxy' && <Input label="Root directory (optional)" placeholder="default: /www/wwwroot/<domain>" value={form.root_dir} onChange={set('root_dir')} />}
+            <div>
+              <span className="mb-1 block text-xs font-medium uppercase tracking-[.05em] text-text-secondary">Type</span>
+              <div className="grid grid-cols-3 gap-2">
+                {Object.entries(TYPES).map(([k, T]) => (
+                  <button type="button" key={k} onClick={() => setForm({ ...form, type: k })} aria-pressed={form.type === k} className={cn('flex flex-col items-start gap-1.5 rounded-lg border-[1.5px] p-3 text-left transition-colors', form.type === k ? 'border-primary bg-primary/5' : 'border-surface-border hover:border-surface-border-hover')}>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md" style={{ backgroundColor: `${T.color}22`, color: T.color }}><T.icon size={16} /></span>
+                    <span className="text-[13px] font-semibold text-text-primary">{T.label}</span>
+                    <span className="text-[11px] leading-4 text-text-tertiary">{T.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {form.type !== 'proxy' && (
+              <div className="flex items-end gap-2">
+                <div className="min-w-0 flex-1"><Input label="Root directory (optional)" placeholder="default: /www/wwwroot/<domain>" value={form.root_dir} onChange={set('root_dir')} /></div>
+                <Button type="button" variant="secondary" className="h-[42px]" onClick={() => setPicking(true)}><FolderSearch size={15} />Browse</Button>
+              </div>
+            )}
             {form.type === 'php' && (
               env?.php_versions?.length
                 ? <Select label="PHP version" value={form.php_version} onChange={set('php_version')}>{env.php_versions.map((v) => <option key={v} value={v}>{v}</option>)}</Select>
-                : <Input label="PHP version" placeholder="8.3 (install it first)" value={form.php_version} onChange={set('php_version')} />
+                : <p className="rounded-md bg-warning-bg p-3 text-sm text-warning">No PHP is installed yet. Install a version from the App Store first.</p>
             )}
             {form.type === 'proxy' && <Input label="Proxy target" placeholder="http://127.0.0.1:3000" value={form.proxy_target} onChange={set('proxy_target')} />}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setForm(null)}>Cancel</Button>
-              <Button type="submit" disabled={create.isPending || !form.domain}>{create.isPending ? 'Creating…' : 'Create'}</Button>
+              <Button type="submit" disabled={create.isPending || !form.domain || (form.type === 'php' && !form.php_version)}>{create.isPending ? 'Creating…' : 'Create'}</Button>
             </div>
           </form>
         )}
       </Modal>
 
-      <Modal open={!!sslSite} onClose={() => setSslSite(null)} title={`SSL for ${sslSite?.domain}`}>
-        <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); ssl.mutate(sslSite) }}>
-          <p className="text-sm text-text-secondary">The domain must already point to this server (port 80 reachable). Uses Let's Encrypt.</p>
-          <Input label="Email (leave empty to use server default)" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setSslSite(null)}>Cancel</Button>
-            <Button type="submit" disabled={ssl.isPending}>{ssl.isPending ? 'Requesting…' : 'Request certificate'}</Button>
-          </div>
-        </form>
-      </Modal>
+      <FolderPicker open={picking} initial={form?.root_dir} onClose={() => setPicking(false)} onSelect={(p) => { setForm((f) => ({ ...f, root_dir: p })); setPicking(false) }} />
+
+      <SiteManager
+        site={sites.find((x) => x.uuid === manage?.uuid) || null}
+        tab={manage?.tab}
+        onTab={(tab) => setManage((m) => ({ ...m, tab }))}
+        onClose={() => setManage(null)}
+        onChanged={refresh}
+      />
 
       <Modal open={!!logs} onClose={() => setLogs(null)} title={`${logs?.site.domain} — ${logs?.type} log`} size="xl">
         {logs && (
@@ -155,7 +223,7 @@ function Websites() {
               <Button variant={logs.type === 'access' ? 'primary' : 'secondary'} onClick={() => openLogs(logs.site, 'access')}>Access</Button>
               <Button variant="secondary" onClick={() => openLogs(logs.site, logs.type)}>Refresh</Button>
             </div>
-            <pre className="h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-md bg-[#1a1917] p-3 font-mono text-xs text-gray-200">{logs.text || '(empty)'}</pre>
+            <pre className="h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-md bg-[#1e1f22] p-3 font-mono text-xs text-[#d4d4d4]">{logs.text || '(empty)'}</pre>
           </div>
         )}
       </Modal>

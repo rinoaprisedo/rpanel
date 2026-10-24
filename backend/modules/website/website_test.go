@@ -2,7 +2,14 @@ package website
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -299,5 +306,238 @@ func TestInstallValidatesInput(t *testing.T) {
 	last := e.run.calls[len(e.run.calls)-1]
 	if last.name != "apt-get" || last.args[len(last.args)-2] != "php8.3-fpm" {
 		t.Fatalf("unexpected install call %+v", last)
+	}
+}
+
+func TestListDirsStaysInsideWebRoot(t *testing.T) {
+	e := setup(t)
+	for _, d := range []string{"site-a", "site-b/public", ".hidden"} {
+		os.MkdirAll(filepath.Join(e.root, d), 0o755)
+	}
+	os.WriteFile(filepath.Join(e.root, "file.txt"), nil, 0o644)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(e.root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	top, err := e.svc.ListDirs("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, d := range top.Dirs {
+		names = append(names, d.Name)
+	}
+	if strings.Join(names, ",") != "site-a,site-b" {
+		t.Errorf("want only real, visible folders; got %v", names)
+	}
+	if top.Parent != "" || top.Path != filepath.Clean(e.root) {
+		t.Errorf("web root listing: %+v", top)
+	}
+
+	sub, err := e.svc.ListDirs(filepath.Join(e.root, "site-b"))
+	if err != nil || sub.Parent != filepath.Clean(e.root) || len(sub.Dirs) != 1 || sub.Dirs[0].Name != "public" {
+		t.Errorf("sub listing: %+v err=%v", sub, err)
+	}
+
+	for _, p := range []string{"/etc", filepath.Join(e.root, ".."), filepath.Join(e.root, "escape"), "relative"} {
+		if _, err := e.svc.ListDirs(p); err == nil {
+			t.Errorf("%q must not be browsable", p)
+		}
+	}
+	if _, err := e.svc.ListDirs(filepath.Join(e.root, "missing")); !errors.Is(err, ErrBadInput) {
+		t.Errorf("missing folder: %v", err)
+	}
+}
+
+func TestProxyRulesRenderAndOverlayAnySiteType(t *testing.T) {
+	ng := &Nginx{LogDir: "/var/log/nginx", AcmeRoot: "/var/www/letsencrypt"}
+	w := &Website{Domain: "a.com", Type: TypeStatic, RootDir: "/www/a", SSLEnabled: true, ProxyRules: []ProxyRule{
+		{Name: "api", Path: "/api/", Target: "http://127.0.0.1:3000", PassHost: true, Enabled: true},
+		{Name: "ext", Path: "/ext/", Target: "https://api.example.com", PassHost: false, Enabled: true},
+		{Name: "off", Path: "/old/", Target: "http://127.0.0.1:4000", Enabled: false},
+	}}
+	out, err := ng.Render(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out, "location /api/ {") != 2 { // both :80 and :443 serve the site
+		t.Errorf("rule must be present in both server blocks:\n%s", out)
+	}
+	if !strings.Contains(out, "proxy_pass https://api.example.com;") || !strings.Contains(out, "proxy_set_header Host $proxy_host;") || !strings.Contains(out, "proxy_ssl_server_name on;") {
+		t.Errorf("target-host rule not rendered properly:\n%s", out)
+	}
+	if strings.Contains(out, "/old/") {
+		t.Errorf("disabled rule must not be rendered:\n%s", out)
+	}
+
+	w.ForceHTTPS = true
+	out, _ = ng.Render(w)
+	if strings.Count(out, "location /api/ {") != 1 {
+		t.Errorf("with force-HTTPS the plain-HTTP server must only redirect, never proxy:\n%s", out)
+	}
+}
+
+func TestProxyRuleValidation(t *testing.T) {
+	ok := ProxyRule{Path: "/api/", Target: "http://127.0.0.1:3000", Enabled: true}
+	if err := validateRules([]ProxyRule{ok}); err != nil {
+		t.Fatalf("valid rule rejected: %v", err)
+	}
+	bad := map[string]ProxyRule{
+		"root path":        {Path: "/", Target: ok.Target},
+		"no leading slash": {Path: "api", Target: ok.Target},
+		"injection":        {Path: "/a { } server {", Target: ok.Target},
+		"semicolon":        {Path: "/a;b", Target: ok.Target},
+		"traversal":        {Path: "/a/../b", Target: ok.Target},
+		"acme path":        {Path: "/.well-known/x", Target: ok.Target},
+		"file target":      {Path: "/a/", Target: "file:///etc/passwd"},
+		"target injection": {Path: "/a/", Target: "http://x;rm -rf"},
+		"newline in name":  {Path: "/a/", Target: ok.Target, Name: "x\nserver {"},
+	}
+	for name, r := range bad {
+		if err := validateRules([]ProxyRule{r}); !errors.Is(err, ErrBadInput) {
+			t.Errorf("%s: want ErrBadInput, got %v", name, err)
+		}
+	}
+	if err := validateRules([]ProxyRule{ok, ok}); err == nil {
+		t.Error("duplicate path must be rejected")
+	}
+}
+
+func TestExtraConfigValidation(t *testing.T) {
+	good := []string{
+		"client_max_body_size 100m;",
+		"location /static/ {\n  expires 30d;\n}",
+		"# a } in a comment\nadd_header X-A \"}\";",
+		"set $x ${arg_id};",
+	}
+	for _, g := range good {
+		if err := validateExtra(g); err != nil {
+			t.Errorf("good config rejected %q: %v", g, err)
+		}
+	}
+	bad := []string{
+		"} server { listen 80; server_name evil.com; location / { return 200; } ",
+		"location / {",
+		"add_header X \"unterminated;",
+		"a\x00b",
+		strings.Repeat("a", maxExtraConfig+1),
+	}
+	for _, b := range bad {
+		if err := validateExtra(b); err == nil {
+			t.Errorf("bad config accepted: %.40q", b)
+		}
+	}
+}
+
+func TestSetExtraConfigAppliesAndRollsBack(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	w, err := e.svc.Create(ctx, CreateInput{Domain: "a.com", Type: TypeStatic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(e.avail, "rpanel-a.com.conf")
+
+	if _, err := e.svc.SetExtraConfig(ctx, w.UUID.String(), "client_max_body_size 100m;\r\n", nil); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(conf)
+	if !strings.Contains(string(b), "client_max_body_size 100m;") {
+		t.Fatalf("directive missing from the vhost:\n%s", b)
+	}
+	cfg, _ := e.svc.Config(w.UUID.String())
+	if cfg.ExtraConfig != "client_max_body_size 100m;" || !strings.Contains(cfg.Rendered, "server_name a.com;") {
+		t.Errorf("config view: %+v", cfg)
+	}
+
+	e.run.failTest = true // nginx rejects the directive
+	if _, err := e.svc.SetExtraConfig(ctx, w.UUID.String(), "bogus_directive on;", nil); err == nil {
+		t.Fatal("nginx -t failure must surface")
+	}
+	e.run.failTest = false
+	after, _ := os.ReadFile(conf)
+	if strings.Contains(string(after), "bogus_directive") {
+		t.Error("a rejected config must not stay on disk")
+	}
+	if got, _ := e.svc.Config(w.UUID.String()); got.ExtraConfig != "client_max_body_size 100m;" {
+		t.Errorf("a rejected config must not be stored: %q", got.ExtraConfig)
+	}
+}
+
+func TestSetProxyRulesPersistsAndSurvivesOtherUpdates(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	w, _ := e.svc.Create(ctx, CreateInput{Domain: "a.com", Type: TypeStatic})
+	rules := []ProxyRule{{Name: " api ", Path: " /api/ ", Target: "http://127.0.0.1:3000", PassHost: true, Enabled: true}}
+	got, err := e.svc.SetProxyRules(ctx, w.UUID.String(), rules, nil)
+	if err != nil || got.ProxyRules[0].Path != "/api/" || got.ProxyRules[0].Name != "api" {
+		t.Fatalf("rules not stored/trimmed: %+v err=%v", got, err)
+	}
+	// Regenerating the vhost for an unrelated reason must keep the rules and custom config.
+	yes := true
+	e.svc.SetExtraConfig(ctx, w.UUID.String(), "client_max_body_size 5m;", nil)
+	e.svc.Update(ctx, w.UUID.String(), UpdateInput{ForceHTTPS: &yes}, nil) // rejected: no SSL, must not wipe anything
+	e.svc.SetStatus(ctx, w.UUID.String(), StatusStopped, nil)
+	e.svc.SetStatus(ctx, w.UUID.String(), StatusRunning, nil)
+	b, _ := os.ReadFile(filepath.Join(e.avail, "rpanel-a.com.conf"))
+	if !strings.Contains(string(b), "location /api/ {") || !strings.Contains(string(b), "client_max_body_size 5m;") {
+		t.Errorf("rules/custom config lost after regenerating:\n%s", b)
+	}
+	if _, err := e.svc.SetProxyRules(ctx, w.UUID.String(), []ProxyRule{{Path: "/", Target: "http://x:1"}}, nil); !errors.Is(err, ErrBadInput) {
+		t.Errorf("invalid rule: %v", err)
+	}
+	if again, _ := e.svc.Get(w.UUID.String()); len(again.ProxyRules) != 1 {
+		t.Errorf("an invalid rule set must not replace the stored one: %+v", again.ProxyRules)
+	}
+}
+
+func selfSigned(t *testing.T, dir, domain string) {
+	t.Helper()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: domain}, Issuer: pkix.Name{CommonName: "Test CA"},
+		DNSNames: []string{domain}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(30 * 24 * time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(dir, domain), 0o755)
+	os.WriteFile(filepath.Join(dir, domain, "fullchain.pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
+}
+
+func TestSSLStatusAndDisable(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	certs := t.TempDir()
+	e.svc.cfg.CertDir = certs
+	w, _ := e.svc.Create(ctx, CreateInput{Domain: "a.com", Type: TypeStatic})
+
+	st, err := e.svc.SSLStatus(w.UUID.String())
+	if err != nil || st.Enabled || st.Cert != nil {
+		t.Fatalf("fresh site: %+v err=%v", st, err)
+	}
+	selfSigned(t, certs, "a.com")
+	if _, err := e.svc.IssueSSL(ctx, w.UUID.String(), "", nil); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.Update(ctx, w.UUID.String(), UpdateInput{ForceHTTPS: func() *bool { b := true; return &b }()}, nil)
+
+	st, _ = e.svc.SSLStatus(w.UUID.String())
+	if !st.Enabled || !st.ForceHTTPS || st.Cert == nil || st.Cert.Issuer != "a.com" || st.Cert.DaysLeft < 29 || st.Cert.Names[0] != "a.com" {
+		t.Errorf("status with certificate: %+v cert=%+v", st, st.Cert)
+	}
+
+	got, err := e.svc.DisableSSL(ctx, w.UUID.String(), nil)
+	if err != nil || got.SSLEnabled || got.ForceHTTPS {
+		t.Fatalf("disable: %+v err=%v", got, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(e.avail, "rpanel-a.com.conf"))
+	if strings.Contains(string(b), "443") || strings.Contains(string(b), "return 301") {
+		t.Errorf("vhost must drop HTTPS and the redirect:\n%s", b)
+	}
+	if st, _ := e.svc.SSLStatus(w.UUID.String()); st.Cert == nil {
+		t.Error("the certificate file must be kept so SSL can be re-enabled")
 	}
 }

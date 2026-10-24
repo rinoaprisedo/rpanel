@@ -112,6 +112,24 @@ func Load() *Config {
 		FMRoots:        splitList(getEnv("FM_ROOTS", "/www,/home")),
 		StorageMaxSize: int64(getEnvInt("STORAGE_MAX_SIZE", 2097152)),
 
+		NginxAvailableDir: getEnv("NGINX_SITES_AVAILABLE", "/etc/nginx/sites-available"),
+		NginxEnabledDir:   getEnv("NGINX_SITES_ENABLED", "/etc/nginx/sites-enabled"),
+		NginxLogDir:       getEnv("NGINX_LOG_DIR", "/var/log/nginx"),
+		WebRoot:           getEnv("WEB_ROOT", "/www/wwwroot"),
+		AcmeRoot:          getEnv("ACME_ROOT", "/var/www/letsencrypt"),
+		CertbotEmail:      getEnv("CERTBOT_EMAIL", ""),
+
+		DBSecretKey: getEnv("SECRET_KEY", getEnv("DB_SECRET_KEY", "")),
+		BackupDir:   getEnv("BACKUP_DIR", "/www/backup/database"),
+		ComposeDir:  getEnv("COMPOSE_DIR", "/www/docker"),
+		CronDir:     getEnv("CRON_DIR", "/etc/cron.d"),
+		CronDataDir: getEnv("CRON_DATA_DIR", "/www/cron"),
+
+		FirewallProtectedPorts: splitList(getEnv("FIREWALL_PROTECTED_PORTS", "")),
+		SSHDConfig:             getEnv("SSHD_CONFIG", "/etc/ssh/sshd_config"),
+		TrustedProxies:         splitList(getEnv("TRUSTED_PROXIES", "127.0.0.1,::1")),
+		AllowedIPs:             splitList(getEnv("PANEL_ALLOWED_IPS", "")),
+
 		TerminalShell:            getEnv("TERMINAL_SHELL", "/bin/bash"),
 		TerminalIdleMinutes:      getEnvInt("TERMINAL_IDLE_MINUTES", 15),
 		TerminalMaxSessions:      getEnvInt("TERMINAL_MAX_SESSIONS", 3),

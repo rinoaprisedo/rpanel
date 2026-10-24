@@ -40,7 +40,7 @@ function FileUpload({
           handleFiles(e.dataTransfer.files)
         }}
         className={cn(
-          'group relative flex cursor-pointer items-center gap-4 rounded-lg border-2 border-dashed border-surface-border bg-white px-4 py-4 transition-colors duration-150 hover:border-primary/60 hover:bg-primary/5',
+          'group relative flex cursor-pointer items-center gap-4 rounded-lg border-2 border-dashed border-surface-border bg-field px-4 py-4 transition-colors duration-150 hover:border-primary/60 hover:bg-primary/5',
           isDragging && 'border-primary bg-primary/5',
         )}
       >

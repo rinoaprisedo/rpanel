@@ -122,7 +122,7 @@ function Table({
             <select
               value={limit}
               onChange={(e) => onLimitChange?.(Number(e.target.value))}
-              className="rounded-md border border-surface-border bg-white px-2 py-1"
+              className="rounded-md border border-surface-border bg-field px-2 py-1"
             >
               {[10, 20, 25, 50, 100].map((n) => (
                 <option key={n} value={n}>

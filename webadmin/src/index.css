@@ -11,8 +11,55 @@ html {
   --color-primary-dark-rgb: 168 80 31;
 }
 
+/* Theme tokens as space-separated RGB channels (so opacity modifiers keep working).
+   Light is the original palette; .dark is a soft, IDE-like dark. */
+:root {
+  --c-bg: 247 246 243;
+  --c-card: 255 255 255;
+  --c-hover: 240 239 233;
+  --c-border: 226 225 219;
+  --c-border-hover: 204 203 195;
+  --c-field: 255 255 255;
+  --c-text: 26 25 23;
+  --c-text-2: 107 106 101;
+  --c-text-3: 160 158 152;
+  --c-danger: 192 57 43;
+  --c-danger-bg: 253 240 239;
+  --c-success: 45 106 79;
+  --c-success-bg: 234 244 238;
+  --c-warning: 146 64 14;
+  --c-warning-bg: 254 243 226;
+  --c-info: 29 78 216;
+  --c-info-bg: 239 246 255;
+  --c-sidebar-bg: 255 255 255;
+  --c-sidebar-text: 107 106 101;
+}
+
+.dark {
+  color-scheme: dark;
+  --c-bg: 28 28 27;
+  --c-card: 37 37 36;
+  --c-hover: 48 48 46;
+  --c-border: 58 58 55;
+  --c-border-hover: 84 84 79;
+  --c-field: 31 31 30;
+  --c-text: 230 228 223;
+  --c-text-2: 168 165 157;
+  --c-text-3: 118 115 108;
+  --c-danger: 242 139 130;
+  --c-danger-bg: 58 35 34;
+  --c-success: 125 205 160;
+  --c-success-bg: 31 51 40;
+  --c-warning: 240 179 90;
+  --c-warning-bg: 56 46 28;
+  --c-info: 128 170 255;
+  --c-info-bg: 31 43 68;
+  --c-sidebar-bg: 37 37 36;
+  --c-sidebar-text: 168 165 157;
+}
+
 body {
-  @apply bg-surface-bg text-text-primary dark:bg-slate-900 dark:text-slate-100;
+  @apply bg-surface-bg text-text-primary;
   line-height: 1.5;
 }
 
@@ -23,6 +70,56 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cccbc3;
+  background: rgb(var(--c-border-hover));
   border-radius: 4px;
+}
+
+/* ---- IDE-style code view (file manager editor): always dark, soft Dark+-like colors ---- */
+.code-ide {
+  background: #1e1f22;
+  color: #d4d4d4;
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 20px;
+}
+.code-ide-gutter {
+  background: #1e1f22;
+  color: #5c6370;
+  border-right: 1px solid #2c2d31;
+}
+.code-ide-text {
+  font: inherit;
+  letter-spacing: 0;
+  tab-size: 2;
+  white-space: pre;
+  word-wrap: normal;
+  font-variant-ligatures: none;
+}
+.code-ide-text.absolute { caret-color: #e6e6e6; }
+.code-ide-text::selection { background: rgb(38 79 120 / 0.6); color: transparent; }
+.code-ide .hljs-comment, .code-ide .hljs-quote { color: #6a9955; font-style: italic; }
+.code-ide .hljs-keyword, .code-ide .hljs-selector-tag, .code-ide .hljs-literal, .code-ide .hljs-doctag, .code-ide .hljs-name, .code-ide .hljs-section { color: #569cd6; }
+.code-ide .hljs-string, .code-ide .hljs-meta .hljs-string, .code-ide .hljs-template-variable { color: #ce9178; }
+.code-ide .hljs-number, .code-ide .hljs-addition { color: #b5cea8; }
+.code-ide .hljs-title, .code-ide .hljs-title.function_ { color: #dcdcaa; }
+.code-ide .hljs-title.class_, .code-ide .hljs-type, .code-ide .hljs-built_in { color: #4ec9b0; }
+.code-ide .hljs-attr, .code-ide .hljs-attribute, .code-ide .hljs-variable, .code-ide .hljs-property, .code-ide .hljs-params, .code-ide .hljs-template-tag { color: #9cdcfe; }
+.code-ide .hljs-meta, .code-ide .hljs-meta .hljs-keyword { color: #c586c0; }
+.code-ide .hljs-symbol, .code-ide .hljs-bullet, .code-ide .hljs-selector-class, .code-ide .hljs-selector-id, .code-ide .hljs-selector-attr, .code-ide .hljs-selector-pseudo { color: #d7ba7d; }
+.code-ide .hljs-regexp, .code-ide .hljs-deletion { color: #d16969; }
+.code-ide .hljs-emphasis { font-style: italic; }
+.code-ide .hljs-strong { font-weight: 700; }
+
+/* ---- chart palette: validated categorical slots + status roles, stepped per mode ---- */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-warn: #ec835a;
+  --viz-crit: #d03b3b;
+}
+.dark {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-warn: #fab219;
+  --viz-crit: #d03b3b;
 }

@@ -222,3 +222,114 @@ func (h *Handler) Install(c *gin.Context) {
 	activity_logs.Audit(c, activity_logs.ActionCreate, module, "", gin.H{"install": req.Component, "version": req.Version})
 	utils.Success(c, 200, "installed", nil)
 }
+
+// Dirs godoc
+// @Summary		List sub-folders inside the web root (folder picker)
+// @Tags			websites
+// @Security		SessionCookie
+// @Param			path	query	string	false	"folder inside the web root; default is the web root"
+// @Router			/websites/dirs [get]
+func (h *Handler) Dirs(c *gin.Context) {
+	out, err := h.svc.ListDirs(c.Query("path"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "ok", out)
+}
+
+type proxiesReq struct {
+	Rules []ProxyRule `json:"rules"`
+}
+
+// SetProxies godoc
+// @Summary		Replace the reverse-proxy rules of a site
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/proxies [put]
+func (h *Handler) SetProxies(c *gin.Context) {
+	var req proxiesReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "invalid request")
+		return
+	}
+	w, err := h.svc.SetProxyRules(c.Request.Context(), c.Param("uuid"), req.Rules, utils.CurrentUserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	activity_logs.Audit(c, activity_logs.ActionUpdate, module, w.UUID.String(), gin.H{"domain": w.Domain, "proxy_rules": len(w.ProxyRules)})
+	utils.Success(c, 200, "saved", w)
+}
+
+// Config godoc
+// @Summary		Custom nginx directives and the full generated vhost of a site
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/config [get]
+func (h *Handler) Config(c *gin.Context) {
+	out, err := h.svc.Config(c.Param("uuid"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "ok", out)
+}
+
+type configReq struct {
+	ExtraConfig string `json:"extra_config"`
+}
+
+// SaveConfig godoc
+// @Summary		Save custom nginx directives (superadmin only; validated with nginx -t and rolled back on failure)
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/config [put]
+func (h *Handler) SaveConfig(c *gin.Context) {
+	// Raw directives can expose any path (alias/root), which is as powerful as the file manager.
+	if !utils.IsSuperadmin(c) {
+		utils.Error(c, 403, "only a superadmin can edit raw nginx directives")
+		return
+	}
+	var req configReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, 400, "invalid request")
+		return
+	}
+	w, err := h.svc.SetExtraConfig(c.Request.Context(), c.Param("uuid"), req.ExtraConfig, utils.CurrentUserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	activity_logs.Audit(c, activity_logs.ActionUpdate, module, w.UUID.String(), gin.H{"domain": w.Domain, "custom_config_bytes": len(w.ExtraConfig)})
+	utils.Success(c, 200, "saved", nil)
+}
+
+// SSLInfo godoc
+// @Summary		SSL state and certificate details of a site
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/ssl [get]
+func (h *Handler) SSLInfo(c *gin.Context) {
+	out, err := h.svc.SSLStatus(c.Param("uuid"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "ok", out)
+}
+
+// DisableSSL godoc
+// @Summary		Serve a site over plain HTTP again (the certificate is kept)
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/ssl [delete]
+func (h *Handler) DisableSSL(c *gin.Context) {
+	w, err := h.svc.DisableSSL(c.Request.Context(), c.Param("uuid"), utils.CurrentUserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	activity_logs.Audit(c, activity_logs.ActionUpdate, module, w.UUID.String(), gin.H{"domain": w.Domain, "ssl": "disabled"})
+	utils.Success(c, 200, "SSL disabled", w)
+}

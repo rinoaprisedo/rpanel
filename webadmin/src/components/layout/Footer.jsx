@@ -28,7 +28,7 @@ function Footer() {
   }, [loadTime])
 
   return (
-    <footer className="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center justify-center gap-y-0.5 border-t border-surface-border bg-white px-4 py-1.5 text-[11px] text-text-tertiary sm:flex-row sm:items-center sm:justify-between sm:gap-x-4 sm:overflow-x-auto sm:whitespace-nowrap sm:py-3 lg:left-[240px]">
+    <footer className="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center justify-center gap-y-0.5 border-t border-surface-border bg-surface-card px-4 py-1.5 text-[11px] text-text-tertiary sm:flex-row sm:items-center sm:justify-between sm:gap-x-4 sm:overflow-x-auto sm:whitespace-nowrap sm:py-3 lg:left-[240px]">
       <div className="order-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-0.5 sm:contents">
         <div className="flex items-center gap-x-4 sm:order-1 sm:flex-1 sm:justify-start">
           <span>BE v{data?.data?.version || '-'}</span>

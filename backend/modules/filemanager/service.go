@@ -514,3 +514,72 @@ func extractFile(zf *zip.File, target string) error {
 	}
 	return err
 }
+
+const (
+	maxSearchResults = 300
+	maxSearchVisited = 100_000
+)
+
+// skipInSearch are pseudo file systems that are huge and never worth searching.
+var skipInSearch = map[string]bool{"/proc": true, "/sys": true, "/dev": true, "/run": true}
+
+// Search walks dir and returns the entries whose name contains q (case-insensitive).
+// Symlinks are not followed, so a link cannot lead the walk outside dir.
+// truncated is true when the result or visit limit stopped the search early.
+func Search(ctx context.Context, dir, q string, limit int) (out []Entry, truncated bool, err error) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return nil, false, ErrBadName
+	}
+	if limit <= 0 || limit > maxSearchResults {
+		limit = maxSearchResults
+	}
+	visited := 0
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			if d != nil && d.IsDir() {
+				return fs.SkipDir // unreadable folder: keep going
+			}
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if p == dir {
+			return nil
+		}
+		if d.IsDir() && skipInSearch[p] {
+			return fs.SkipDir
+		}
+		if visited++; visited > maxSearchVisited {
+			truncated = true
+			return fs.SkipAll
+		}
+		if !strings.Contains(strings.ToLower(d.Name()), q) {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		out = append(out, toEntry(filepath.Dir(p), info))
+		if len(out) >= limit {
+			truncated = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		return nil, false, err
+	}
+	if err != nil {
+		truncated = true // timed out: return what was found so far
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].IsDir != out[j].IsDir {
+			return out[i].IsDir
+		}
+		return strings.ToLower(out[i].Path) < strings.ToLower(out[j].Path)
+	})
+	return out, truncated, nil
+}

@@ -26,6 +26,7 @@ import (
 	_ "rpanel/backend/docs"
 	"rpanel/backend/middleware"
 	"rpanel/backend/modules/activity_logs"
+	"rpanel/backend/modules/appstore"
 	"rpanel/backend/modules/auth"
 	"rpanel/backend/modules/cronjobs"
 	"rpanel/backend/modules/dashboard"
@@ -193,7 +194,7 @@ func main() {
 	activityLogsHandler := activity_logs.NewHandler(db, cfg)
 	activityLogsHandler.RegisterRoutes(api, guard)
 
-	dashboardHandler := dashboard.NewHandler(context.Background())
+	dashboardHandler := dashboard.NewHandler(context.Background(), db, cfg)
 	dashboardHandler.RegisterRoutes(api, guard)
 
 	firewallHandler := firewall.NewHandler(cfg)
@@ -208,6 +209,9 @@ func main() {
 
 	databasesHandler := databases.NewHandler(db, cfg)
 	databasesHandler.RegisterRoutes(api, guard)
+
+	appStoreHandler := appstore.NewHandler()
+	appStoreHandler.RegisterRoutes(api, guard)
 
 	websiteHandler := website.NewHandler(db, cfg)
 	websiteHandler.RegisterRoutes(api, guard)

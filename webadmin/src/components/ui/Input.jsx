@@ -16,7 +16,7 @@ const Input = forwardRef(function Input({ label, error, className, type, ...prop
           ref={ref}
           type={isPassword && showPassword ? 'text' : type}
           className={cn(
-            'h-[42px] w-full rounded-md border-[1.5px] border-surface-border bg-white px-3 text-sm text-text-primary outline-none transition-colors duration-150 focus:border-primary',
+            'h-[42px] w-full rounded-md border-[1.5px] border-surface-border bg-field px-3 text-sm text-text-primary outline-none transition-colors duration-150 focus:border-primary',
             isPassword && 'pr-10',
             error && 'border-danger focus:border-danger',
             className,

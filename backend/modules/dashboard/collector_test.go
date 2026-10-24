@@ -3,6 +3,10 @@ package dashboard
 import (
 	"context"
 	"testing"
+
+	"rpanel/backend/system"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestSampleFillsOverviewAndCapsHistory(t *testing.T) {
@@ -25,4 +29,12 @@ func TestTopProcessesLimit(t *testing.T) {
 	if len(ps) == 0 || len(ps) > 3 {
 		t.Fatalf("got %d processes", len(ps))
 	}
+}
+
+func TestRoutesRegister(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	allow := func(string, string) gin.HandlerFunc { return func(c *gin.Context) { c.Next() } }
+	h := &Handler{collector: NewCollector(), analyzer: NewAnalyzer(t.TempDir(), func() []string { return nil })}
+	h.probes = NewProbes(system.Default, nil, "", h.analyzer)
+	h.RegisterRoutes(gin.New().Group("/api/v1"), allow)
 }
