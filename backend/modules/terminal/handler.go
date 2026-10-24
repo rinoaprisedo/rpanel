@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -85,10 +86,25 @@ func (h *Handler) release(uid uint64) {
 	h.active[uid]--
 }
 
+// startDir picks the shell's working directory: the folder the file manager
+// asked for when it is an existing absolute directory, otherwise the fallback.
+// The shell is a full root shell anyway, so this only has to be a sane path.
+func startDir(requested, fallback string) string {
+	if requested == "" || !filepath.IsAbs(requested) || strings.ContainsRune(requested, 0) {
+		return fallback
+	}
+	p := filepath.Clean(requested)
+	if fi, err := os.Stat(p); err != nil || !fi.IsDir() {
+		return fallback
+	}
+	return p
+}
+
 // Connect godoc
 // @Summary		Open an interactive shell (WebSocket upgrade)
 // @Tags			terminal
 // @Security		SessionCookie
+// @Param			cwd	query	string	false	"start in this directory"
 // @Router			/terminal/ws [get]
 func (h *Handler) Connect(c *gin.Context) {
 	if !h.originAllowed(c.Request) {
@@ -120,12 +136,13 @@ func (h *Handler) Connect(c *gin.Context) {
 	if home == "" {
 		home = "/"
 	}
+	dir := startDir(c.Query("cwd"), home)
 	ip, ua := c.ClientIP(), c.Request.UserAgent()
 	started := time.Now()
-	activity_logs.LogActivity(&uid, activity_logs.ActionLogin, "terminal", "", nil, gin.H{"event": "session_start"}, ip, ua)
+	activity_logs.LogActivity(&uid, activity_logs.ActionLogin, "terminal", "", nil, gin.H{"event": "session_start", "dir": dir}, ip, ua)
 
 	why, _ := Serve(h.ctx, conn, Options{
-		Shell: h.shell, Args: h.shellArgs, Env: DefaultEnv(home), Dir: home, IdleTimeout: h.idle,
+		Shell: h.shell, Args: h.shellArgs, Env: DefaultEnv(home), Dir: dir, IdleTimeout: h.idle,
 	})
 	activity_logs.LogActivity(&uid, activity_logs.ActionLogout, "terminal", "", nil,
 		gin.H{"event": "session_end", "reason": why, "seconds": int(time.Since(started).Seconds())}, ip, ua)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -118,5 +120,19 @@ func TestIdleTimeoutAndSessionLimit(t *testing.T) {
 	h.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("session slot leaked: %d", n)
+	}
+}
+
+func TestStartDir(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "f")
+	os.WriteFile(file, []byte("x"), 0o644)
+	for _, c := range []struct{ in, want string }{
+		{dir, dir}, {dir + "/../" + filepath.Base(dir), dir}, {"", "/home"}, {"relative/path", "/home"},
+		{filepath.Join(dir, "missing"), "/home"}, {file, "/home"}, {"/etc/passwd\x00/x", "/home"},
+	} {
+		if got := startDir(c.in, "/home"); got != c.want {
+			t.Errorf("startDir(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

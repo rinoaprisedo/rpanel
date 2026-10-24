@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Terminal as XTerm } from '@xterm/xterm'
@@ -15,10 +16,12 @@ import { cn } from '../../utils/cn'
 import * as api from '../../api/terminal'
 
 const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:8800/api/v1'
-const wsURL = () => {
+const wsURL = (cwd) => {
   // VITE_API_URL may be absolute (dev) or relative like /api/v1 (behind the panel's nginx).
-  if (apiBase.startsWith('/')) return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${apiBase}/terminal/ws`
-  return apiBase.replace(/^http/, 'ws') + '/terminal/ws'
+  const base = apiBase.startsWith('/')
+    ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${apiBase}/terminal/ws`
+    : apiBase.replace(/^http/, 'ws') + '/terminal/ws'
+  return cwd ? `${base}?cwd=${encodeURIComponent(cwd)}` : base
 }
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
@@ -30,6 +33,8 @@ const statusStyle = {
 }
 
 function Terminal() {
+  const [params] = useSearchParams()
+  const cwd = params.get('cwd') || '' // set by the file manager's Terminal shortcut
   const box = useRef(null)
   const termRef = useRef(null)
   const wsRef = useRef(null)
@@ -80,7 +85,7 @@ function Terminal() {
     termRef.current = term
 
     const enc = new TextEncoder()
-    const ws = new WebSocket(wsURL())
+    const ws = new WebSocket(wsURL(cwd))
     wsRef.current = ws
     ws.binaryType = 'arraybuffer'
     const sendSize = () => {
@@ -116,7 +121,7 @@ function Terminal() {
       termRef.current = null
       wsRef.current = null
     }
-  }, [attempt])
+  }, [attempt, cwd])
 
   // The terminal pane changes size when toggling fullscreen; ResizeObserver refits it.
   useEffect(() => {
@@ -154,6 +159,7 @@ function Terminal() {
           <div className="flex items-center gap-2 text-xs text-gray-300">
             <TerminalSquare size={14} className="text-gray-400" />
             <span className="font-medium">Shell</span>
+            {cwd && <span className="max-w-[40vw] truncate font-mono text-[11px] text-gray-400" title={cwd}>{cwd}</span>}
             <span className="text-gray-500">·</span>
             <span className={cn('h-2 w-2 rounded-full', st.dot)} />
             <span>{st.text}</span>

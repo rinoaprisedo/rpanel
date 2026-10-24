@@ -16,15 +16,18 @@ export const deletePaths = (paths) => client.post('/file-manager/delete', { path
 export const chmodPath = (path, mode, recursive) => client.post('/file-manager/chmod', { path, mode, recursive }).then((r) => r.data)
 export const compressPaths = (paths, dest) => client.post('/file-manager/compress', { paths, dest }).then((r) => r.data)
 export const extractZip = (path, dest) => client.post('/file-manager/extract', { path, dest }).then((r) => r.data)
-export const uploadFiles = (dir, files, onProgress) => {
+// One file per request so the UI can show per-file progress and honor skip/replace per file.
+// dir is a query param: the server streams the multipart body. Without overwrite the server refuses (409) an existing name.
+export const uploadFile = (dir, file, { overwrite, onProgress, signal } = {}) => {
   const form = new FormData()
-  files.forEach((f) => form.append('files', f))
+  form.append('files', file)
   return client
     .post('/file-manager/upload', form, {
-      params: { dir }, // dir is a query param: the server streams the multipart body
+      params: { dir, overwrite: overwrite ? 1 : undefined },
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 0,
-      onUploadProgress: (e) => onProgress && e.total && onProgress(Math.round((e.loaded / e.total) * 100)),
+      signal,
+      onUploadProgress: (e) => onProgress && onProgress(e.loaded, e.total || file.size),
     })
     .then((r) => r.data)
 }

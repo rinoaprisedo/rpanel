@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowUp, RefreshCw, FolderPlus, FilePlus, Upload, Trash2, Copy, Scissors, ClipboardPaste, Archive, Folder, File as FileIcon, Search, X } from 'lucide-react'
+import { ArrowUp, RefreshCw, FolderPlus, FilePlus, Upload, Trash2, Copy, Scissors, ClipboardPaste, Archive, Folder, File as FileIcon, Search, X, TerminalSquare } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
@@ -9,6 +10,9 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Skeleton from '../../components/ui/Skeleton'
 import CodeEditor from '../../components/ui/CodeEditor'
 import RowActions from './RowActions'
+import UploadFlow from './UploadFlow'
+import usePermission from '../../hooks/usePermission'
+import useAuthStore from '../../store/authStore'
 import { isImage } from '../../utils/highlight'
 import * as api from '../../api/fileManager'
 import { formatBytes, formatShortDate } from '../../utils/format'
@@ -28,7 +32,12 @@ function useDebounced(value, ms) {
 
 function FileManager() {
   const qc = useQueryClient()
-  const [path, setPath] = useState(null)
+  const navigate = useNavigate()
+  const { canCreate } = usePermission()
+  const userKey = useAuthStore((s) => s.user?.uuid || s.user?.id || 'me')
+  const lastKey = `rpanel-fm-path:${userKey}` // reopen where the user left off
+  const [path, setPath] = useState(() => localStorage.getItem(lastKey))
+  const [upload, setUpload] = useState(null) // { dir, files }
   const [selected, setSelected] = useState([])
   const [clip, setClip] = useState(null) // { op: 'copy'|'move', paths }
   const [prompt, setPrompt] = useState(null) // { title, label, value, onSubmit }
@@ -48,6 +57,14 @@ function FileManager() {
     enabled: !!cwd,
     retry: false,
   })
+
+  // The remembered folder may have been deleted or become inaccessible: fall back to the first root.
+  useEffect(() => {
+    if (error && path && path === localStorage.getItem(lastKey)) {
+      localStorage.removeItem(lastKey)
+      setPath(null)
+    }
+  }, [error, path, lastKey])
 
   const term = query.trim()
   const debounced = useDebounced(term, 300)
@@ -84,7 +101,7 @@ function FileManager() {
       setBusy(false)
     }
   }
-  const go = (p) => { setPath(p); setSelected([]); setQuery(''); setMoreFor(null) }
+  const go = (p) => { setPath(p); localStorage.setItem(lastKey, p); setSelected([]); setQuery(''); setMoreFor(null) }
   const toggle = (p) => setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
   const openEntry = async (e) => {
     if (e.is_dir) return go(e.path)
@@ -153,9 +170,12 @@ function FileManager() {
           onChange={(e) => {
             const files = [...e.target.files]
             e.target.value = ''
-            if (files.length) run(() => api.uploadFiles(cwd, files), 'Uploaded')
+            if (files.length) setUpload({ dir: cwd, files })
           }}
         />
+        {canCreate('terminal') && (
+          <Button variant="secondary" disabled={!cwd} title="Open a terminal in this folder" onClick={() => navigate(`/terminal?cwd=${encodeURIComponent(cwd)}`)}><TerminalSquare size={14} />Terminal</Button>
+        )}
         <span className="mx-1 h-5 w-px bg-surface-border" />
         <Button variant="secondary" disabled={!selected.length} onClick={() => stash('copy', selected)}><Copy size={14} />Copy</Button>
         <Button variant="secondary" disabled={!selected.length} onClick={() => stash('move', selected)}><Scissors size={14} />Cut</Button>
@@ -243,6 +263,16 @@ function FileManager() {
         )}
       </div>
       {truncated && <p className="text-xs text-text-tertiary">Showing the first matches only. Narrow the search or open a deeper folder.</p>}
+
+      {upload && (
+        <UploadFlow
+          dir={upload.dir}
+          files={upload.files}
+          existing={new Set(upload.dir === cwd ? (listed || []).map((e) => e.name) : [])}
+          onFinished={refresh}
+          onClose={() => { setUpload(null); refresh() }}
+        />
+      )}
 
       <Modal open={!!prompt} onClose={() => setPrompt(null)} title={prompt?.title}>
         {prompt && (
