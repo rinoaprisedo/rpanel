@@ -61,6 +61,7 @@ install_files() {
   render "$SRC/deploy/rpanel.service" /etc/systemd/system/rpanel.service
   systemctl daemon-reload
   [ -f "$SRC/deploy/install-online.sh" ] && install -m 755 "$SRC/deploy/install-online.sh" /usr/local/bin/rpanel-update
+  [ -f "$SRC/deploy/uninstall.sh" ] && install -m 755 "$SRC/deploy/uninstall.sh" /usr/local/bin/rpanel-uninstall
   return 0
 }
 

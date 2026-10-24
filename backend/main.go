@@ -2,7 +2,7 @@
 // middleware stack, module routes, and the migrate/seed CLI subcommands.
 //
 // @title						RPanel API
-// @version					1.2.0
+// @version					1.3.0
 // @description				Admin Panel Base Project API
 // @host						localhost:8800
 // @BasePath					/api/v1
@@ -51,7 +51,7 @@ import (
 
 // AppVersion is surfaced unauthenticated at GET /api/v1/version for the
 // frontend footer — bump alongside the @version annotation above.
-const AppVersion = "1.2.0"
+const AppVersion = "1.3.0"
 
 func main() {
 	cfg := config.Load()

@@ -17,7 +17,7 @@ cp -R "$ROOT/webadmin/dist" "$OUT/web"
 echo "==> backend ($ARCH)"
 ( cd "$ROOT/backend" && swag init -g main.go -o docs >/dev/null && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -ldflags "-s -w" -o "$OUT/rpanel" . )
 cp "$ROOT"/deploy/{install.sh,install-online.sh,uninstall.sh,rpanel.service,nginx-panel.conf.tmpl} "$OUT/deploy/"
-cp "$ROOT/deploy/README.md" "$OUT/README.md"
+cp "$ROOT/README.md" "$OUT/README.md"
 chmod +x "$OUT/deploy/install.sh" "$OUT/deploy/install-online.sh" "$OUT/deploy/uninstall.sh" "$OUT/rpanel"
 ( cd "$ROOT/dist" && tar czf "$NAME.tar.gz" "$NAME" )
 echo "==> $ROOT/dist/$NAME.tar.gz"

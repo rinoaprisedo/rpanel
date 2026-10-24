@@ -188,4 +188,4 @@ go run ./cmd/ticket comment 12 "…"
 - Modules whose request bodies legitimately contain `<`/`>` (file contents, compose, cron scripts) are excluded from the global XSS sanitizer in `main.go` via their `APIPrefix`.
 - Secrets at rest (DB admin passwords, TOTP secrets) use `backend/secretbox` (AES-256-GCM) with `SECRET_KEY`.
 - `main.go` CLI subcommands: `migrate`, `seed`, `set-admin`, `disable-2fa <email>`, `cron-run <uuid>` (called by system cron).
-- Deployment: `deploy/` (see `deploy/README.md`): `build-release.sh`, `install.sh`, nginx template with secret entrance, systemd unit.
+- Deployment: `deploy/` (see `README.md`): `build-release.sh`, `install.sh`, nginx template with secret entrance, systemd unit.
