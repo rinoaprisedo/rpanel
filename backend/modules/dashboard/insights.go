@@ -70,6 +70,7 @@ type InsightsResponse struct {
 	Updates  Updates       `json:"updates"`
 	Firewall Firewall      `json:"firewall"`
 	Health   Health        `json:"health"`
+	Release  Release       `json:"release"`
 }
 
 // insightInput is the snapshot buildInsights reasons about (kept free of I/O so it is testable).
@@ -82,6 +83,7 @@ type insightInput struct {
 	Updates   Updates
 	Firewall  Firewall
 	Traffic1h *Traffic
+	Release   Release
 }
 
 func human(b uint64) string {
@@ -213,6 +215,10 @@ func buildInsights(in insightInput) []Insight {
 	} else if in.Updates.Total > 0 {
 		add("updates", SevInfo, plural(in.Updates.Total, "package update", "package updates")+" available", "No security fixes among them.", "/terminal")
 	}
+	if in.Release.Available {
+		add("release", SevInfo, "RPanel "+in.Release.Latest+" is available",
+			"You are running "+in.Release.Current+". On the server run: sudo rpanel-update  (release notes: "+in.Release.URL+")", "")
+	}
 	if in.Updates.RebootRequired {
 		add("reboot", SevWarning, "A reboot is required", "Installed updates (usually the kernel) only take effect after a restart.", "")
 	}
@@ -264,11 +270,14 @@ type Probes struct {
 	svcAt    time.Time
 	top      ProcessInfo
 	updates  Updates
+	release  Release
 	rebootAt string
+
+	releaseBase string // GitHub base URL; replaced in tests
 }
 
 func NewProbes(run system.Runner, db *gorm.DB, certDir string, an *Analyzer) *Probes {
-	return &Probes{run: run, apps: appstore.NewService(run), db: db, certDir: certDir, analyzer: an, rebootAt: "/var/run/reboot-required"}
+	return &Probes{run: run, apps: appstore.NewService(run), db: db, certDir: certDir, analyzer: an, rebootAt: "/var/run/reboot-required", releaseBase: "https://github.com"}
 }
 
 // StartUpdateChecks looks for pending package updates now-ish and then hourly.
@@ -379,6 +388,7 @@ func (p *Probes) Build(ctx context.Context, c *Collector) InsightsResponse {
 	fw := p.firewall(ctx)
 	p.mu.Lock()
 	up := p.updates
+	rel := p.release
 	p.mu.Unlock()
 	if _, err := os.Stat(p.rebootAt); err == nil {
 		up.RebootRequired = true
@@ -387,9 +397,9 @@ func (p *Probes) Build(ctx context.Context, c *Collector) InsightsResponse {
 	if p.analyzer != nil {
 		tr, _ = p.analyzer.Traffic("1h", "")
 	}
-	in := insightInput{Overview: c.Overview(), Recent: c.History(), TopMem: top, Sites: sites, Services: svc, Updates: up, Firewall: fw, Traffic1h: tr}
+	in := insightInput{Overview: c.Overview(), Recent: c.History(), TopMem: top, Sites: sites, Services: svc, Updates: up, Firewall: fw, Traffic1h: tr, Release: rel}
 	return InsightsResponse{
 		Insights: buildInsights(in), Health: buildHealth(in),
-		Sites: sites, Services: svc, Updates: up, Firewall: fw,
+		Sites: sites, Services: svc, Updates: up, Firewall: fw, Release: rel,
 	}
 }

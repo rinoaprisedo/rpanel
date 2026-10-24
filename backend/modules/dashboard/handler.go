@@ -29,6 +29,7 @@ func NewHandler(ctx context.Context, db *gorm.DB, cfg *config.Config) *Handler {
 	h.analyzer = NewAnalyzer(cfg.NginxLogDir, h.probes.Domains)
 	h.probes.analyzer = h.analyzer
 	h.probes.StartUpdateChecks(ctx)
+	h.probes.StartReleaseChecks(ctx)
 	return h
 }
 

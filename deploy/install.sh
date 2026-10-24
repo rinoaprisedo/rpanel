@@ -60,6 +60,8 @@ install_files() {
   install -d -m 755 /www/docker
   render "$SRC/deploy/rpanel.service" /etc/systemd/system/rpanel.service
   systemctl daemon-reload
+  [ -f "$SRC/deploy/install-online.sh" ] && install -m 755 "$SRC/deploy/install-online.sh" /usr/local/bin/rpanel-update
+  return 0
 }
 
 wait_healthy() {
@@ -75,10 +77,20 @@ wait_healthy() {
 if [ -f "$INSTALL_DIR/.env" ]; then
   log "Existing installation found: upgrading (secrets are kept)"
   systemctl stop rpanel 2>/dev/null || true
-  install_files
-  (cd "$INSTALL_DIR" && ./rpanel migrate && ./rpanel seed)
-  systemctl enable --now rpanel
-  wait_healthy
+  # Keep the previous build so a failed upgrade can be undone.
+  rm -rf "$INSTALL_DIR/web.prev"
+  cp -p "$INSTALL_DIR/rpanel" "$INSTALL_DIR/rpanel.prev"
+  cp -R "$INSTALL_DIR/web" "$INSTALL_DIR/web.prev"
+  # Explicit && chain: set -e is ignored inside an "if" condition.
+  if ! ( install_files && cd "$INSTALL_DIR" && ./rpanel migrate && ./rpanel seed && systemctl enable --now rpanel && wait_healthy ); then
+    warn "upgrade failed: restoring the previous version"
+    systemctl stop rpanel 2>/dev/null || true
+    mv -f "$INSTALL_DIR/rpanel.prev" "$INSTALL_DIR/rpanel"
+    rm -rf "$INSTALL_DIR/web"; mv "$INSTALL_DIR/web.prev" "$INSTALL_DIR/web"
+    systemctl start rpanel || true
+    die "upgrade failed and was rolled back (database migrations that already ran are additive and stay)"
+  fi
+  rm -f "$INSTALL_DIR/rpanel.prev"; rm -rf "$INSTALL_DIR/web.prev"
   log "Upgrade finished"
   exit 0
 fi

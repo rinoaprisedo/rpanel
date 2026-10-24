@@ -194,6 +194,7 @@ func main() {
 	activityLogsHandler := activity_logs.NewHandler(db, cfg)
 	activityLogsHandler.RegisterRoutes(api, guard)
 
+	dashboard.Version = AppVersion
 	dashboardHandler := dashboard.NewHandler(context.Background(), db, cfg)
 	dashboardHandler.RegisterRoutes(api, guard)
 

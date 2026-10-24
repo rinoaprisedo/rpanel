@@ -5,18 +5,11 @@ file manager, web terminal, databases (MariaDB/PostgreSQL), Docker, cron and fir
 
 ## Install
 
-Build a release on your development machine (needs Go, Node/npm and `swag`):
+On the server (Ubuntu 22.04+/Debian 12+, as root), one command downloads the latest release,
+verifies its checksum and installs it:
 
 ```bash
-./deploy/build-release.sh amd64        # or arm64
-scp dist/rpanel-*-linux-amd64.tar.gz root@your-server:/root/
-```
-
-On the server (Ubuntu 22.04+/Debian 12+, as root):
-
-```bash
-tar xzf rpanel-*.tar.gz && cd rpanel-*/
-./deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/rinoaprisedo/rpanel/main/deploy/install-online.sh | sudo bash
 ```
 
 The installer installs nginx, PostgreSQL, Redis and certbot, creates the database, generates every
@@ -25,8 +18,31 @@ It prints the access URL and the generated administrator password (also saved in
 `/opt/rpanel/install-info.txt`, readable by root only — delete it after storing the password).
 
 Options (environment variables): `PANEL_PORT`, `ADMIN_EMAIL`, `PUBLIC_HOST`, `PANEL_ALLOWED_IPS`, `INSTALL_DIR`.
-Running the installer again on an installed system upgrades the binary and web files and keeps all secrets.
+Do not install it next to another panel (aaPanel, BT, ...): both manage nginx, the firewall and cron.
+
+### Updating
+
+```bash
+sudo rpanel-update            # latest release
+sudo rpanel-update 1.3.0      # a specific version
+```
+
+`rpanel-update` is installed with the panel. It downloads the release, verifies the checksum and
+upgrades in place: secrets, database and websites are kept, and the previous binary and web files
+are restored automatically if the upgrade fails (migrations that already ran are additive and stay).
+The dashboard lists "RPanel x.y.z is available" under *Needs attention* when a newer release exists.
 `deploy/uninstall.sh [--purge]` removes the service (and with `--purge` the panel database and `/opt/rpanel`).
+
+### Building and publishing a release (maintainers)
+
+```bash
+./deploy/release.sh        # needs gh (logged in), Go, Node, swag; bump AppVersion in backend/main.go first
+```
+
+builds amd64 and arm64 tarballs, writes their `.sha256` files and creates the GitHub release `vX.Y.Z`
+with `install-online.sh` attached. To install from a local build instead:
+`./deploy/build-release.sh arm64`, copy `dist/rpanel-*.tar.gz` to the server, extract it and run `./deploy/install.sh`.
+Forks can set `RPANEL_REPO=owner/name`; a plain web server can serve the files via `RPANEL_MIRROR`.
 
 ## Security model
 
