@@ -10,6 +10,7 @@ import (
 	"rpanel/backend/modules/permissions"
 	"rpanel/backend/modules/roles"
 	"rpanel/backend/modules/settings"
+	"rpanel/backend/modules/terminal"
 	"rpanel/backend/modules/users"
 	"rpanel/backend/modules/website"
 
@@ -33,6 +34,7 @@ func Run(db *gorm.DB) {
 		&databases.Server{},
 		&cronjobs.Job{},
 		&cronjobs.Run{},
+		&terminal.Template{},
 	)
 	if err != nil {
 		log.Fatalf("migration failed: %v", err)

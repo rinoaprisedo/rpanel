@@ -20,7 +20,7 @@ export function darkenHex(hex, amount = 0.15) {
 }
 
 // Mixes a hex color toward white; used on dark backgrounds, where a dark brand
-// color (the default is #35494d) would almost vanish.
+// color would almost vanish.
 export function lightenHex(hex, amount) {
   const clean = hex.replace('#', '')
   const ch = [0, 2, 4].map((i) => Math.round(parseInt(clean.slice(i, i + 2), 16) * (1 - amount) + 255 * amount))

@@ -6,18 +6,32 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx"
 )
 
-type pgEngine struct{ db *sql.DB }
+type pgEngine struct {
+	db         *sql.DB
+	host       string
+	port       int
+	user, pass string
+}
 
 func openPostgres(host string, port int, user, pass string) (Engine, error) {
+	db, err := openPostgresDB(host, port, user, pass, "postgres")
+	if err != nil {
+		return nil, err
+	}
+	return &pgEngine{db: db, host: host, port: port, user: user, pass: pass}, nil
+}
+
+func openPostgresDB(host string, port int, user, pass, dbname string) (*sql.DB, error) {
 	u := url.URL{
 		Scheme:   "postgres",
 		User:     url.UserPassword(user, pass),
 		Host:     net.JoinHostPort(host, strconv.Itoa(port)),
-		Path:     "/postgres",
+		Path:     "/" + dbname,
 		RawQuery: "sslmode=prefer&connect_timeout=5",
 	}
 	db, err := sql.Open("pgx", u.String())
@@ -25,7 +39,7 @@ func openPostgres(host string, port int, user, pass string) (Engine, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(2)
-	return &pgEngine{db: db}, nil
+	return db, nil
 }
 
 func (p *pgEngine) Close() error                   { return p.db.Close() }
@@ -115,4 +129,37 @@ func (p *pgEngine) SetPassword(ctx context.Context, user, _, password string) er
 
 func (p *pgEngine) Grant(ctx context.Context, db, user, _ string) error {
 	return p.exec(ctx, "GRANT ALL PRIVILEGES ON DATABASE %I TO %I", db, user)
+}
+
+func pgQuote(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
+
+var pgDialect = dialect{
+	quote:    pgQuote,
+	qualify:  func(_, t string) string { return `"public".` + pgQuote(t) },
+	ph:       func(i int) string { return "$" + strconv.Itoa(i) },
+	castText: func(c string) string { return c + "::text" },
+	like:     "ILIKE",
+	tablesSQL: `SELECT c.relname, CASE WHEN c.relkind IN ('v','m') THEN 'VIEW' ELSE 'BASE TABLE' END,
+		GREATEST(c.reltuples, 0)::bigint, CASE WHEN c.relkind IN ('r','p','m') THEN pg_total_relation_size(c.oid) ELSE 0 END
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relkind IN ('r','p','v','m') ORDER BY c.relname`,
+	tableArgs: func(string) []any { return nil },
+	columnsSQL: `SELECT a.attname, format_type(a.atttypid, a.atttypmod), NOT a.attnotnull,
+		EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)),
+		pg_get_expr(d.adbin, d.adrelid), COALESCE(NULLIF(a.attidentity::text, ''), '')
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+		LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+		WHERE n.nspname = 'public' AND c.relname = $1 AND c.relkind IN ('r','p','v','m') AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`,
+	columnArgs: func(_, t string) []any { return []any{t} },
+}
+
+// Browse opens a dedicated pool: PostgreSQL connections are bound to one database.
+func (p *pgEngine) Browse(_ context.Context, db string) (Browser, error) {
+	conn, err := openPostgresDB(p.host, p.port, p.user, p.pass, db)
+	if err != nil {
+		return nil, err
+	}
+	return &sqlBrowser{db: conn, d: pgDialect, name: db, own: true}, nil
 }

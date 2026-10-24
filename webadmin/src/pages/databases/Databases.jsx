@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, Download, RotateCcw, DatabaseBackup, KeyRound } from 'lucide-react'
-import Tabs from '../../components/ui/Tabs'
+import { Plus, Trash2, Download, RotateCcw, KeyRound, Server, Compass, Users as UsersIcon, Archive } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Select from '../../components/ui/Select'
@@ -12,14 +11,16 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Skeleton from '../../components/ui/Skeleton'
 import * as api from '../../api/databases'
 import { formatBytes } from '../../utils/format'
+import { cn } from '../../utils/cn'
+import Explorer from './Explorer'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
-const tabs = ['Databases', 'Users', 'Backups']
+const tabs = [['Explorer', Compass], ['Users', UsersIcon], ['Backups', Archive]]
 const emptyServer = { name: '', engine: 'mysql', host: '127.0.0.1', port: 3306, admin_user: '', admin_password: '' }
 
 function Databases() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState('Databases')
+  const [tab, setTab] = useState('Explorer')
   const [serverId, setServerId] = useState('')
   const { data: srvRes, isLoading } = useQuery({ queryKey: ['db-servers'], queryFn: api.getServers })
   const servers = srvRes?.data || []
@@ -28,7 +29,7 @@ function Databases() {
   const isMy = server?.engine === 'mysql'
 
   const enabled = !!sid
-  const dbs = useQuery({ queryKey: ['db-dbs', sid], queryFn: () => api.getDatabases(sid), enabled: enabled && tab === 'Databases', retry: false })
+  const dbs = useQuery({ queryKey: ['db-dbs', sid], queryFn: () => api.getDatabases(sid), enabled: enabled && (tab === 'Explorer' || tab === 'Backups'), retry: false })
   const users = useQuery({ queryKey: ['db-users', sid], queryFn: () => api.getUsers(sid), enabled: enabled && tab === 'Users', retry: false })
   const backups = useQuery({ queryKey: ['db-backups', sid], queryFn: () => api.getBackups(sid), enabled: enabled && tab === 'Backups', retry: false })
 
@@ -45,7 +46,6 @@ function Databases() {
     onError: (e) => toast.error(errMsg(e)),
   })
   const addSrv = useMutation(m((d) => api.addServer(d), 'Server added', () => { setServerForm(null); inv('db-servers') }))
-  const installSrv = useMutation(m((e) => api.installServer(e), 'Server installed', () => inv('db-servers')))
   const createDb = useMutation(m((d) => api.createDatabase(sid, d), 'Database created', () => { setDbForm(null); inv('db-dbs', 'db-users') }))
   const createUsr = useMutation(m((d) => api.createUser(sid, d), 'User created', () => { setUserForm(null); inv('db-users') }))
   const setPw = useMutation(m((d) => api.setPassword(sid, d), 'Password updated', () => setPwForm(null)))
@@ -59,41 +59,41 @@ function Databases() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-surface-border bg-surface-card p-4">
-        <div className="flex items-end gap-3">
-          <div className="w-64">
-            <Select label="Server" value={sid || ''} onChange={(e) => setServerId(e.target.value)} disabled={!servers.length}>
-              {servers.map((s) => <option key={s.uuid} value={s.uuid}>{s.name} ({s.engine} @ {s.host}:{s.port})</option>)}
-            </Select>
-          </div>
-          {server && <Button variant="ghost" title="Forget this server connection" onClick={() => setConfirm({ title: `Remove ${server.name}`, message: 'Only the saved connection is removed; the database server itself is not touched.', run: () => api.deleteServer(server.uuid) })}><Trash2 size={14} className="text-danger" /></Button>}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" disabled={installSrv.isPending} onClick={() => installSrv.mutate('mysql')}>Install MariaDB</Button>
-          <Button variant="secondary" disabled={installSrv.isPending} onClick={() => installSrv.mutate('postgres')}>Install PostgreSQL</Button>
-          <Button onClick={() => setServerForm(emptyServer)}><Plus size={14} />Add server</Button>
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        {servers.map((sv) => (
+          <button key={sv.uuid} onClick={() => setServerId(sv.uuid)}
+            className={cn('flex items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition-colors', sv.uuid === sid ? 'border-primary bg-primary/10' : 'border-surface-border bg-surface-card hover:border-surface-border-hover')}>
+            <Server size={18} className={sv.uuid === sid ? 'text-primary' : 'text-text-tertiary'} />
+            <div>
+              <div className="text-sm font-semibold text-text-primary">{sv.name}</div>
+              <div className="text-[11px] text-text-secondary">{sv.engine === 'mysql' ? 'MySQL / MariaDB' : 'PostgreSQL'} · {sv.host}:{sv.port}</div>
+            </div>
+          </button>
+        ))}
+        <Button variant="secondary" className="h-[52px]" onClick={() => setServerForm(emptyServer)}><Plus size={14} />Add server</Button>
+        {server && <Button variant="ghost" title="Forget this server connection" className="ml-auto" onClick={() => setConfirm({ title: `Remove ${server.name}`, message: 'Only the saved connection is removed; the database server itself is not touched.', run: () => api.deleteServer(server.uuid) })}><Trash2 size={14} className="text-danger" />Remove server</Button>}
       </div>
-      {installSrv.isPending && <p className="text-sm text-text-secondary">Installing via apt and provisioning an admin account, this can take a few minutes…</p>}
 
       {!server ? (
-        <div className="rounded-lg border border-surface-border bg-surface-card p-8 text-center text-sm text-text-secondary">No database server yet. Install one locally or add an existing server.</div>
+        <div className="rounded-lg border border-surface-border bg-surface-card p-8 text-center text-sm text-text-secondary">No database server yet. Install MariaDB or PostgreSQL from the App Store, then add it here with <b>Add server</b>.</div>
       ) : (
         <>
-          <Tabs tabs={tabs} value={tab} onChange={setTab} />
+          <div className="flex gap-1 border-b border-surface-border">
+            {tabs.map(([t, Icon]) => (
+              <button key={t} onClick={() => setTab(t)} className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-medium', tab === t ? 'border-b-2 border-primary text-primary' : 'text-text-secondary hover:text-text-primary')}>
+                <Icon size={15} />{t}
+              </button>
+            ))}
+          </div>
 
-          {tab === 'Databases' && (
-            <Panel
-              query={dbs}
-              action={<Button onClick={() => setDbForm({ name: '', user: '', host: 'localhost', password: '' })}><Plus size={14} />New database</Button>}
-              head={['Name', 'Size', '']}
-              rows={(dbs.data?.data || []).map((d) => [
-                d.name, formatBytes(d.size),
-                <div className="flex justify-end gap-1" key="a">
-                  <Button variant="ghost" title="Backup" disabled={backup.isPending} onClick={() => backup.mutate(d.name)}><DatabaseBackup size={14} /></Button>
-                  <Button variant="ghost" title="Drop" onClick={() => setConfirm({ title: `Drop ${d.name}`, message: `Permanently delete database "${d.name}" and all its data?`, run: () => api.dropDatabase(sid, d.name) })}><Trash2 size={14} className="text-danger" /></Button>
-                </div>,
-              ])}
+          {tab === 'Explorer' && (
+            <Explorer
+              sid={sid}
+              dbs={dbs}
+              backupBusy={backup.isPending}
+              onNew={() => setDbForm({ name: '', user: '', host: 'localhost', password: '' })}
+              onBackup={(name) => backup.mutate(name)}
+              onDrop={(name) => setConfirm({ title: `Drop ${name}`, message: `Permanently delete database "${name}" and all its data?`, run: () => api.dropDatabase(sid, name) })}
             />
           )}
 

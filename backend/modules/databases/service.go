@@ -2,8 +2,6 @@ package databases
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -488,84 +486,4 @@ func (s *Service) BackupFilePath(uuid, file string) (string, error) {
 	}
 	p, _, err := s.backupPath(sv, file)
 	return p, err
-}
-
-// ---- local server installation ----
-
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// InstallLocal installs MariaDB or PostgreSQL via apt, provisions a dedicated
-// "rpanel" admin account with a random password, and registers the server.
-func (s *Service) InstallLocal(ctx context.Context, engine string) (*Server, error) {
-	if err := s.needCipher(); err != nil {
-		return nil, err
-	}
-	pkg, unit, name, port := "", "", "", 0
-	switch engine {
-	case EngineMySQL:
-		pkg, unit, name, port = "mariadb-server", "mariadb", "local-mysql", 3306
-	case EnginePostgres:
-		pkg, unit, name, port = "postgresql", "postgresql", "local-postgres", 5432
-	default:
-		return nil, fmt.Errorf("%w: engine", ErrBadInput)
-	}
-	if res, err := s.run.Run(ctx, 5*time.Minute, "apt-get", "update"); err != nil {
-		return nil, fmt.Errorf("apt-get update failed: %s", tail(res.Stderr))
-	}
-	if res, err := s.run.Run(ctx, 20*time.Minute, "apt-get", "install", "-y", pkg); err != nil {
-		return nil, fmt.Errorf("install failed: %s", tail(res.Stderr))
-	}
-	if res, err := s.run.Run(ctx, time.Minute, "systemctl", "enable", "--now", unit); err != nil {
-		return nil, fmt.Errorf("cannot start %s: %s", unit, tail(res.Stderr))
-	}
-	pw, err := randomHex(24) // hex only: safe to embed in the provisioning statements below
-	if err != nil {
-		return nil, err
-	}
-	const admin = "rpanel"
-	if engine == EngineMySQL {
-		sql := ""
-		for _, h := range []string{"localhost", "127.0.0.1"} {
-			sql += fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s'; ALTER USER '%s'@'%s' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON *.* TO '%s'@'%s' WITH GRANT OPTION; ",
-				admin, h, pw, admin, h, pw, admin, h)
-		}
-		sql += "FLUSH PRIVILEGES;"
-		if res, err := s.run.Run(ctx, time.Minute, "mysql", "-e", sql); err != nil {
-			return nil, fmt.Errorf("cannot provision admin user: %s", tail(res.Stderr))
-		}
-	} else {
-		create := fmt.Sprintf("CREATE ROLE %s SUPERUSER LOGIN PASSWORD '%s'", admin, pw)
-		alter := fmt.Sprintf("ALTER ROLE %s SUPERUSER LOGIN PASSWORD '%s'", admin, pw)
-		_, _ = s.run.Run(ctx, time.Minute, "runuser", "-u", "postgres", "--", "psql", "-c", create) // fails harmlessly if it exists
-		if res, err := s.run.Run(ctx, time.Minute, "runuser", "-u", "postgres", "--", "psql", "-v", "ON_ERROR_STOP=1", "-c", alter); err != nil {
-			return nil, fmt.Errorf("cannot provision admin role: %s", tail(res.Stderr))
-		}
-	}
-	e, err := s.open(engine, "127.0.0.1", port, admin, pw)
-	if err != nil {
-		return nil, err
-	}
-	defer e.Close()
-	pctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	if err := e.Ping(pctx); err != nil {
-		return nil, fmt.Errorf("installed but cannot connect: %w", err)
-	}
-	enc, err := s.cipher.Encrypt(pw)
-	if err != nil {
-		return nil, err
-	}
-	var sv Server
-	if err := s.db.Where("name = ?", name).First(&sv).Error; err == nil {
-		sv.AdminPassE, sv.AdminUser, sv.Host, sv.Port = enc, admin, "127.0.0.1", port
-		return &sv, s.db.Save(&sv).Error
-	}
-	sv = Server{Name: name, Engine: engine, Host: "127.0.0.1", Port: port, AdminUser: admin, AdminPassE: enc, Local: true}
-	return &sv, s.db.Create(&sv).Error
 }

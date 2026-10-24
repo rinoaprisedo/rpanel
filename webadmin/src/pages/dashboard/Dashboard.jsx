@@ -10,7 +10,9 @@ import StackedColumns from '../../components/charts/StackedColumns'
 import LineChart from '../../components/charts/LineChart'
 import HBars from '../../components/charts/HBars'
 import { compact, pct, tooltipTime } from '../../components/charts/scale'
-import Insights from './Insights'
+import { AttentionButton } from './Insights'
+import HealthCard from './HealthCard'
+import { computeHealth } from '../../utils/health'
 import usePermission from '../../hooks/usePermission'
 import { cn } from '../../utils/cn'
 import { getOverview, getHistory, getHistoryRange, getProcesses, getTraffic, getInsights } from '../../api/dashboard'
@@ -82,6 +84,9 @@ function Dashboard() {
   const points = trend.data?.data || []
   const busy = traffic.isFetching || trend.isFetching
 
+  // Gauge follows the 3 s overview poll; slow probes (5xx, services) come from the 30 s insights call.
+  const health = useMemo(() => computeHealth(o, live, insights?.health), [o, live, insights?.health])
+
   const rootDisk = useMemo(() => o?.disks?.find((d) => d.mount === '/') || o?.disks?.[0], [o])
   const sites = useMemo(() => {
     const stats = Object.fromEntries((t?.sites || []).map((s) => [s.domain, s]))
@@ -113,21 +118,22 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* ---- header ---- */}
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold text-text-primary">{o.hostname}</h1>
-          <p className="truncate text-xs text-text-tertiary">{o.os} · kernel {o.kernel} · {o.arch}</p>
-        </div>
-        <div className="flex items-center gap-4 text-xs text-text-secondary">
-          <span className="inline-flex items-center gap-1.5"><Activity size={13} className="text-text-tertiary" />Up {formatUptime(o.uptime)}</span>
-          {insights?.updates?.known && <span>{insights.updates.total} update{insights.updates.total === 1 ? '' : 's'}</span>}
-          {insights?.firewall?.known && <span className="inline-flex items-center gap-1">{insights.firewall.active ? <CircleCheck size={13} className="text-success" /> : <CircleX size={13} className="text-danger" />}Firewall {insights.firewall.active ? 'on' : 'off'}</span>}
-        </div>
-      </div>
-
-      {/* ---- what to do now ---- */}
-      {insights ? <Insights items={insights.insights} /> : <Skeleton className="h-28 w-full" />}
+      {/* ---- health verdict + header ---- */}
+      {insights?.health && health ? (
+        <HealthCard
+          health={health}
+          hostname={o.hostname}
+          subtitle={`${o.os} · kernel ${o.kernel} · ${o.arch}`}
+          right={
+            <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary">
+              <span className="inline-flex items-center gap-1.5"><Activity size={13} className="text-text-tertiary" />Up {formatUptime(o.uptime)}</span>
+              {insights.updates?.known && <span>{insights.updates.total} update{insights.updates.total === 1 ? '' : 's'}</span>}
+              {insights.firewall?.known && <span className="inline-flex items-center gap-1">{insights.firewall.active ? <CircleCheck size={13} className="text-success" /> : <CircleX size={13} className="text-danger" />}Firewall {insights.firewall.active ? 'on' : 'off'}</span>}
+              <AttentionButton items={insights.insights} />
+            </div>
+          }
+        />
+      ) : <Skeleton className="h-64 w-full" />}
 
       {/* ---- live resources ---- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

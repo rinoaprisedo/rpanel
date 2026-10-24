@@ -327,38 +327,3 @@ func TestRestoreAndBackupFileValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-func TestInstallLocalProvisionsAndRegisters(t *testing.T) {
-	e := setup(t, "k")
-	sv, err := e.svc.InstallLocal(context.Background(), EngineMySQL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sv.Name != "local-mysql" || !sv.Local || sv.AdminUser != "rpanel" || sv.Port != 3306 {
-		t.Fatalf("server = %+v", sv)
-	}
-	names := []string{}
-	for _, c := range e.run.calls {
-		names = append(names, c.name)
-	}
-	if strings.Join(names, ",") != "apt-get,apt-get,systemctl,mysql" {
-		t.Fatalf("command order: %v", names)
-	}
-	pw, err := e.svc.password(sv)
-	if err != nil || len(pw) != 48 {
-		t.Fatalf("generated password: %q %v", pw, err)
-	}
-	if err := e.svc.needCipher(); err != nil {
-		t.Fatal(err)
-	}
-	// Re-running updates the existing record instead of failing on the unique name.
-	if _, err := e.svc.InstallLocal(context.Background(), EngineMySQL); err != nil {
-		t.Fatalf("second install: %v", err)
-	}
-	if list, _ := e.svc.ListServers(); len(list) != 1 {
-		t.Fatalf("expected 1 server, got %d", len(list))
-	}
-	if _, err := e.svc.InstallLocal(context.Background(), "oracle"); !errors.Is(err, ErrBadInput) {
-		t.Fatalf("unknown engine: %v", err)
-	}
-}

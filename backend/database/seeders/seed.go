@@ -174,15 +174,20 @@ func seedSettings(db *gorm.DB) {
 		"maintenance_mode": settings.TypeBoolean,
 	}
 	values := map[string]string{
-		"app_name":         "BaseProject",
+		"app_name":         "RPanel",
 		"app_logo":         "",
 		"app_favicon":      "",
-		"primary_color":    "#35494d",
+		"primary_color":    "#de0202",
 		"maintenance_mode": "false",
 	}
 	for key, t := range defaults {
 		var s settings.Setting
 		db.Where("key = ?", key).Attrs(settings.Setting{Key: key, Value: values[key], Type: t}).FirstOrCreate(&s)
+	}
+	// Installs created before the RPanel branding still hold the boilerplate
+	// defaults; replace those, but never a value somebody chose themselves.
+	for key, old := range map[string]string{"app_name": "BaseProject", "primary_color": "#35494d"} {
+		db.Model(&settings.Setting{}).Where("key = ? AND value = ?", key, old).Update("value", values[key])
 	}
 }
 

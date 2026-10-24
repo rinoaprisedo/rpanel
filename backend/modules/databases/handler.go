@@ -79,29 +79,6 @@ func (h *Handler) AddServer(c *gin.Context) {
 	utils.Success(c, 201, "server added", sv)
 }
 
-type installReq struct {
-	Engine string `json:"engine" binding:"required"`
-}
-
-// InstallServer godoc
-// @Summary		Install MariaDB or PostgreSQL locally via apt and register it (blocking)
-// @Tags			databases
-// @Security		SessionCookie
-// @Router			/databases/servers/install [post]
-func (h *Handler) InstallServer(c *gin.Context) {
-	var in installReq
-	if !bind(c, &in) {
-		return
-	}
-	sv, err := h.svc.InstallLocal(c.Request.Context(), in.Engine)
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	activity_logs.Audit(c, activity_logs.ActionCreate, module, sv.UUID.String(), gin.H{"op": "install_server", "engine": sv.Engine})
-	utils.Success(c, 201, "server installed", sv)
-}
-
 // DeleteServer godoc
 // @Summary		Forget a server connection (the server itself is not touched)
 // @Tags			databases

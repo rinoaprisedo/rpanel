@@ -1,7 +1,7 @@
-// Package main wires up the BaseProject backend: config, database, redis,
+// Package main wires up the RPanel backend: config, database, redis,
 // middleware stack, module routes, and the migrate/seed CLI subcommands.
 //
-// @title						BaseProject API
+// @title						RPanel API
 // @version					1.2.0
 // @description				Admin Panel Base Project API
 // @host						localhost:8800
@@ -137,7 +137,7 @@ func main() {
 		defaultLimit(c)
 	})
 	router.Use(middleware.CSRF(cfg.AppEnv == "production"))
-	router.Use(middleware.XSSSanitizer(filemanager.APIPrefix, docker.APIPrefix, cronjobs.APIPrefix))
+	router.Use(middleware.XSSSanitizer(filemanager.APIPrefix, docker.APIPrefix, cronjobs.APIPrefix, terminal.TemplateAPIPrefix, databases.APIPrefix))
 	router.Use(middleware.MaintenanceMode(rdb, db))
 	router.Use(middleware.RateLimit(rdb, "api", cfg.RateLimitAPI, time.Minute, func(c *gin.Context) string { return c.ClientIP() }))
 
@@ -218,6 +218,7 @@ func main() {
 
 	terminalHandler := terminal.NewHandler(context.Background(), cfg.TerminalShell, cfg.TerminalIdleMinutes, cfg.TerminalMaxSessions, cfg.FrontendURL)
 	terminalHandler.RegisterRoutes(api, guard)
+	terminal.NewTemplateHandler(terminal.NewTemplateService(db)).RegisterRoutes(api, guard)
 
 	fileManagerHandler := filemanager.NewHandler(cfg.FMRoots)
 	fileManagerHandler.RegisterRoutes(api, guard)
@@ -225,7 +226,7 @@ func main() {
 	filesHandler := files.NewHandler(privateStorage)
 	filesHandler.RegisterRoutes(api, guard)
 
-	log.Printf("BaseProject backend listening on :%s (env=%s)", cfg.AppPort, cfg.AppEnv)
+	log.Printf("RPanel backend listening on :%s (env=%s)", cfg.AppPort, cfg.AppEnv)
 	if err := router.Run(cfg.AppHost + ":" + cfg.AppPort); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}

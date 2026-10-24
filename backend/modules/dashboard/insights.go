@@ -69,6 +69,7 @@ type InsightsResponse struct {
 	Services []ServiceInfo `json:"services"`
 	Updates  Updates       `json:"updates"`
 	Firewall Firewall      `json:"firewall"`
+	Health   Health        `json:"health"`
 }
 
 // insightInput is the snapshot buildInsights reasons about (kept free of I/O so it is testable).
@@ -386,8 +387,9 @@ func (p *Probes) Build(ctx context.Context, c *Collector) InsightsResponse {
 	if p.analyzer != nil {
 		tr, _ = p.analyzer.Traffic("1h", "")
 	}
+	in := insightInput{Overview: c.Overview(), Recent: c.History(), TopMem: top, Sites: sites, Services: svc, Updates: up, Firewall: fw, Traffic1h: tr}
 	return InsightsResponse{
-		Insights: buildInsights(insightInput{Overview: c.Overview(), Recent: c.History(), TopMem: top, Sites: sites, Services: svc, Updates: up, Firewall: fw, Traffic1h: tr}),
-		Sites:    sites, Services: svc, Updates: up, Firewall: fw,
+		Insights: buildInsights(in), Health: buildHealth(in),
+		Sites: sites, Services: svc, Updates: up, Firewall: fw,
 	}
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Plus, Trash2, ShieldCheck, ShieldOff, Lock, ArrowDownToLine, ArrowUpFromLine, Search } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Select from '../../components/ui/Select'
@@ -9,17 +9,23 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Skeleton from '../../components/ui/Skeleton'
+import usePermission from '../../hooks/usePermission'
+import { cn } from '../../utils/cn'
 import * as api from '../../api/firewall'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
 const isLockout = (e) => e.response?.data?.code === 'lockout'
 const emptyRule = { action: 'allow', port: '', proto: 'tcp', source: 'any', comment: '' }
+const quick = [['SSH', '22', 'tcp'], ['HTTP', '80', 'tcp'], ['HTTPS', '443', 'tcp'], ['MySQL', '3306', 'tcp'], ['PostgreSQL', '5432', 'tcp'], ['Redis', '6379', 'tcp']]
 const actionVariant = { ALLOW: 'success', DENY: 'danger', REJECT: 'danger', LIMIT: 'warning' }
 
 function Firewall() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['firewall'], queryFn: api.getFirewall })
   const st = data?.data
+  const { canCreate, canEdit, canDelete } = usePermission()
+  const [q, setQ] = useState('')
+  const [fa, setFa] = useState('all')
   const [form, setForm] = useState(null)
   const [del, setDel] = useState(null)
   const [warn, setWarn] = useState(null) // { message, retry }
@@ -56,46 +62,86 @@ function Firewall() {
     )
   }
 
+  const rules = st.rules.filter((r) => (fa === 'all' || r.action.toLowerCase().startsWith(fa)) && `${r.to} ${r.from} ${r.action}`.toLowerCase().includes(q.toLowerCase()))
+  const counts = st.rules.reduce((m, r) => ({ ...m, [r.action]: (m[r.action] || 0) + 1 }), {})
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-surface-border bg-surface-card p-4">
-        <div className="flex flex-wrap items-center gap-4 text-sm text-text-secondary">
-          <span className="flex items-center gap-2">{st.active ? <ShieldCheck size={16} className="text-success" /> : <ShieldOff size={16} className="text-danger" />}
-            Firewall <Badge variant={st.active ? 'success' : 'danger'}>{st.active ? 'active' : 'inactive'}</Badge></span>
-          <span>Default incoming: <b className="text-text-primary">{st.default_incoming || '—'}</b>, outgoing: <b className="text-text-primary">{st.default_outgoing || '—'}</b></span>
-          <span>Protected ports: <span className="font-mono text-text-primary">{st.protected_ports.join(', ')}</span></span>
+    <div className="space-y-5">
+      <section className={cn('flex flex-wrap items-center justify-between gap-5 rounded-xl border p-5', st.active ? 'border-success/30 bg-success-bg' : 'border-danger/30 bg-danger-bg')}>
+        <div className="flex items-center gap-4">
+          <span className={cn('flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-md', st.active ? 'bg-success' : 'bg-danger')}>
+            {st.active ? <ShieldCheck size={28} /> : <ShieldOff size={28} />}
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">Firewall is {st.active ? 'active' : 'inactive'}</h2>
+            <p className="text-sm text-text-secondary">
+              {st.active ? `${st.rules.length} rule${st.rules.length === 1 ? '' : 's'} protecting this server` : 'All ports are reachable. Enabling first allows SSH and this panel so you cannot lock yourself out.'}
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Select value={st.default_incoming || ''} onChange={(e) => e.target.value && policy.mutate(e.target.value)} aria-label="Default incoming policy">
-            <option value="" disabled>Default incoming…</option>
-            <option value="deny">deny</option><option value="reject">reject</option><option value="allow">allow</option>
-          </Select>
-          {st.active
-            ? <Button variant="secondary" disabled={disable.isPending} onClick={() => disable.mutate()}>Disable</Button>
-            : <Button disabled={enable.isPending} onClick={() => enable.mutate()}>Enable</Button>}
-          <Button onClick={() => setForm(emptyRule)}><Plus size={14} />Add rule</Button>
+        {canEdit('firewall') && (st.active
+          ? <Button variant="secondary" disabled={disable.isPending} onClick={() => disable.mutate()}>Disable firewall</Button>
+          : <Button disabled={enable.isPending} onClick={() => enable.mutate()}>Enable firewall</Button>)}
+      </section>
+      {st.error && <p className="text-sm text-danger">{st.error}</p>}
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+          <p className="mb-2 flex items-center gap-2 text-xs font-medium text-text-secondary"><ArrowDownToLine size={14} />Incoming traffic</p>
+          <div className="flex gap-1 rounded-lg bg-surface-hover p-1">
+            {['deny', 'reject', 'allow'].map((p) => (
+              <button key={p} disabled={!canEdit('firewall') || policy.isPending} onClick={() => st.default_incoming !== p && policy.mutate(p)}
+                className={cn('flex-1 rounded-md py-1.5 text-xs font-medium capitalize transition-colors disabled:cursor-not-allowed', st.default_incoming === p ? (p === 'allow' ? 'bg-warning text-white' : 'bg-success text-white') : 'text-text-secondary hover:text-text-primary')}>{p}</button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-text-tertiary">Default for ports without a rule. “deny” is the safest.</p>
+        </div>
+        <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+          <p className="mb-2 flex items-center gap-2 text-xs font-medium text-text-secondary"><ArrowUpFromLine size={14} />Outgoing traffic</p>
+          <p className="text-xl font-semibold capitalize text-text-primary">{st.default_outgoing || '—'}</p>
+          <p className="mt-2 text-[11px] text-text-tertiary">What this server may connect to.</p>
+        </div>
+        <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+          <p className="mb-2 flex items-center gap-2 text-xs font-medium text-text-secondary"><Lock size={14} />Protected ports</p>
+          <div className="flex flex-wrap gap-1.5">
+            {st.protected_ports.map((p) => <span key={p} className="rounded-md bg-surface-hover px-2 py-1 font-mono text-xs text-text-primary">{p}</span>)}
+          </div>
+          <p className="mt-2 text-[11px] text-text-tertiary">Cannot be blocked, to keep you connected.</p>
         </div>
       </div>
-      {st.error && <p className="text-sm text-danger">{st.error}</p>}
-      {!st.active && <p className="text-sm text-text-secondary">Enabling first allows the protected ports above (SSH and this panel) so you cannot lock yourself out.</p>}
 
-      <div className="overflow-x-auto rounded-lg border border-surface-border bg-surface-card">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-lg bg-surface-hover p-1">
+            {[['all', `All (${st.rules.length})`], ['allow', `Allow (${counts.ALLOW || 0})`], ['deny', `Deny (${(counts.DENY || 0) + (counts.REJECT || 0)})`], ['limit', `Limit (${counts.LIMIT || 0})`]].map(([k, l]) => (
+              <button key={k} onClick={() => setFa(k)} className={cn('rounded-md px-3 py-1.5 text-xs font-medium transition-colors', fa === k ? 'bg-surface-card text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary')}>{l}</button>
+            ))}
+          </div>
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search port or source…" className="h-9 w-56 rounded-md border-[1.5px] border-surface-border bg-field pl-8 pr-3 text-sm outline-none focus:border-primary" />
+          </div>
+        </div>
+        {canCreate('firewall') && <Button onClick={() => setForm(emptyRule)}><Plus size={14} />Add rule</Button>}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-surface-border bg-surface-card">
         <table className="w-full text-sm">
-          <thead className="border-b border-surface-border text-left text-xs uppercase text-text-secondary">
-            <tr><th className="p-3">#</th><th className="p-3">To (port)</th><th className="p-3">Action</th><th className="p-3">Direction</th><th className="p-3">From</th><th className="p-3" /></tr>
+          <thead className="bg-surface-hover text-left text-xs uppercase text-text-secondary">
+            <tr><th className="p-3 pl-4">#</th><th className="p-3">Port / service</th><th className="p-3">Action</th><th className="p-3">Direction</th><th className="p-3">From</th><th className="p-3" /></tr>
           </thead>
           <tbody>
-            {st.rules.map((r) => (
-              <tr key={r.number} className="border-b border-surface-border last:border-0">
-                <td className="p-3 text-text-secondary">{r.number}</td>
-                <td className="p-3 font-mono text-xs">{r.to}</td>
+            {rules.map((r) => (
+              <tr key={r.number} className="group border-t border-surface-border hover:bg-surface-hover/60">
+                <td className="p-3 pl-4 text-text-tertiary">{r.number}</td>
+                <td className="p-3"><span className="rounded-md bg-surface-hover px-2 py-1 font-mono text-xs font-medium text-text-primary">{r.to}</span></td>
                 <td className="p-3"><Badge variant={actionVariant[r.action] || 'neutral'}>{r.action}</Badge></td>
                 <td className="p-3 text-text-secondary">{r.direction}</td>
-                <td className="p-3 font-mono text-xs">{r.from}</td>
-                <td className="p-3 text-right"><Button variant="ghost" title="Delete rule" onClick={() => setDel(r)}><Trash2 size={14} className="text-danger" /></Button></td>
+                <td className="p-3 font-mono text-xs text-text-secondary">{r.from}</td>
+                <td className="p-3 text-right">{canDelete('firewall') && <Button variant="ghost" className="h-8 px-2 opacity-50 group-hover:opacity-100" title="Delete rule" onClick={() => setDel(r)}><Trash2 size={14} className="text-danger" /></Button>}</td>
               </tr>
             ))}
-            {!st.rules.length && <tr><td colSpan={6} className="p-8 text-center text-text-secondary">No rules</td></tr>}
+            {!rules.length && <tr><td colSpan={6} className="p-10 text-center text-text-secondary">{st.rules.length ? 'No rule matches' : 'No rules yet'}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -103,6 +149,15 @@ function Firewall() {
       <Modal open={!!form} onClose={() => setForm(null)} title="Add rule">
         {form && (
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); submitRule(false) }}>
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-[.05em] text-text-secondary">Quick fill</p>
+              <div className="flex flex-wrap gap-1.5">
+                {quick.map(([n, port, proto]) => (
+                  <button type="button" key={n} onClick={() => setForm({ ...form, port, proto, comment: form.comment || n })}
+                    className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-colors', form.port === port ? 'border-primary bg-primary/10 text-primary' : 'border-surface-border text-text-secondary hover:bg-surface-hover')}>{n} <span className="font-mono opacity-70">{port}</span></button>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Select label="Action" value={form.action} onChange={(e) => setForm({ ...form, action: e.target.value })}>
                 <option value="allow">allow</option><option value="deny">deny</option><option value="reject">reject</option><option value="limit">limit (rate limit)</option>

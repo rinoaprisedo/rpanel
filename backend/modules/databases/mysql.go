@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/go-sql-driver/mysql"
 )
@@ -102,4 +103,26 @@ func (m *mysqlEngine) SetPassword(ctx context.Context, user, host, password stri
 func (m *mysqlEngine) Grant(ctx context.Context, db, user, host string) error {
 	_, err := m.db.ExecContext(ctx, fmt.Sprintf("GRANT ALL PRIVILEGES ON %s.* TO ?@?", qi(db)), user, host)
 	return err
+}
+
+var mysqlDialect = dialect{
+	quote: func(s string) string { return "`" + strings.ReplaceAll(s, "`", "``") + "`" },
+	qualify: func(db, t string) string {
+		return qi(strings.ReplaceAll(db, "`", "``")) + "." + qi(strings.ReplaceAll(t, "`", "``"))
+	},
+	ph:       func(int) string { return "?" },
+	castText: func(c string) string { return "CAST(" + c + " AS CHAR)" },
+	like:     "LIKE",
+	tablesSQL: `SELECT table_name, CASE WHEN table_type = 'VIEW' THEN 'VIEW' ELSE 'BASE TABLE' END,
+		CAST(COALESCE(table_rows, 0) AS SIGNED), CAST(COALESCE(data_length + index_length, 0) AS SIGNED)
+		FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name`,
+	tableArgs: func(db string) []any { return []any{db} },
+	columnsSQL: `SELECT column_name, column_type, is_nullable = 'YES', column_key = 'PRI', column_default, extra
+		FROM information_schema.columns WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position`,
+	columnArgs: func(db, t string) []any { return []any{db, t} },
+	use:        func(db string) string { return "USE " + qi(strings.ReplaceAll(db, "`", "``")) },
+}
+
+func (m *mysqlEngine) Browse(_ context.Context, db string) (Browser, error) {
+	return &sqlBrowser{db: m.db, d: mysqlDialect, name: db}, nil
 }
