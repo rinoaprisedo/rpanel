@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: rpanel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports: ["5401:5432"]
+    volumes: [pgdata:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6301:6379"]
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+
+  backend:
+    build: ./backend
+    ports: ["8800:8800"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FRONTEND_URL: http://localhost:8801,http://localhost:8802
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    env_file: ./backend/.env
+
+  webadmin:
+    build: ./webadmin
+    ports: ["8801:80"]
+    depends_on: [backend]
+
+volumes:
+  pgdata:

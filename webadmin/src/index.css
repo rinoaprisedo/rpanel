@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  font-family: 'DM Sans', sans-serif;
+  /* Space-separated RGB channels (not hex) so Tailwind's bg-primary/10-style
+     opacity modifiers work. Overridden at runtime from Settings > Appearance
+     (see settingsStore) — defaults here match the original hardcoded brand color. */
+  --color-primary-rgb: 194 98 46;
+  --color-primary-dark-rgb: 168 80 31;
+}
+
+body {
+  @apply bg-surface-bg text-text-primary dark:bg-slate-900 dark:text-slate-100;
+  line-height: 1.5;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cccbc3;
+  border-radius: 4px;
+}

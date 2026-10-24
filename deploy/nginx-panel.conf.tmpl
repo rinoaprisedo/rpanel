@@ -1,0 +1,62 @@
+# Managed by the RPanel installer. Public entry point of the panel:
+#   - TLS on @PANEL_PORT@ (self-signed until you install your own certificate)
+#   - "secret entrance": every request without the entrance cookie gets a 404;
+#     visiting https://<host>:@PANEL_PORT@@ENTRANCE@ sets the cookie and redirects to /login
+#   - /api and /uploads proxied to the local backend, the SPA served as static files
+map $http_upgrade $rpanel_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen @PANEL_PORT@ ssl;
+    listen [::]:@PANEL_PORT@ ssl;
+    server_name _;
+
+    ssl_certificate     @INSTALL_DIR@/ssl/panel.crt;
+    ssl_certificate_key @INSTALL_DIR@/ssl/panel.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:RPANELSSL:5m;
+
+    client_max_body_size 4g;
+    server_tokens off;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy same-origin always;
+
+    location = @ENTRANCE@ {
+        add_header Set-Cookie "rp_entrance=@TOKEN@; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Strict" always;
+        return 302 /login;
+    }
+
+    location /api/ {
+        if ($cookie_rp_entrance != "@TOKEN@") { return 404; }
+        proxy_pass http://127.0.0.1:@BACKEND_PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Overwrite (never append to) the client-supplied header: the backend only trusts this proxy.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $rpanel_connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+
+    location /uploads/ {
+        if ($cookie_rp_entrance != "@TOKEN@") { return 404; }
+        proxy_pass http://127.0.0.1:@BACKEND_PORT@;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+
+    location / {
+        if ($cookie_rp_entrance != "@TOKEN@") { return 404; }
+        root @INSTALL_DIR@/web;
+        try_files $uri /index.html;
+    }
+}

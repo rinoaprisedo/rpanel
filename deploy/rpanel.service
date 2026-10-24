@@ -1,0 +1,18 @@
+[Unit]
+Description=RPanel server control panel
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The panel administers the host (nginx, ufw, docker, cron, files, terminal),
+# so it runs as root. Restrict who can reach it with the entrance path, 2FA and PANEL_ALLOWED_IPS.
+User=root
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/rpanel
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

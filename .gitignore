@@ -1,0 +1,13 @@
+backend/.env
+webadmin/.env
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+backend/storage/private/
+node_modules/
+dist/
+backend/baseadmin
+backend/docs/
+*.log
+.DS_Store
+.github/
+backend/rpanel
