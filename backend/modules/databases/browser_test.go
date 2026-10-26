@@ -113,3 +113,14 @@ func TestBrowserRowCRUD(t *testing.T) {
 		t.Fatalf("exec update: %+v %v", r, err)
 	}
 }
+
+func TestPanelDatabaseIsProtected(t *testing.T) {
+	ProtectPanelDatabase("RPanel_Test", "rpanel_role")
+	if !IsSystemDB("rpanel_test") || !IsSystemUser("RPANEL_ROLE") {
+		t.Fatal("panel database/role must be treated as system objects")
+	}
+	s := &Service{}
+	if err := s.withBrowser(context.Background(), "x", "rpanel_test", func(Browser) error { return nil }); !errors.Is(err, ErrProtected) {
+		t.Fatalf("browse panel db: %v", err)
+	}
+}

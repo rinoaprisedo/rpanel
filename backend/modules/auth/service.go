@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -53,6 +56,9 @@ type LoginResult struct {
 func (s *Service) Login(email, password, otp, ip, userAgent string) (*LoginResult, error) {
 	user, err := s.repo.FindUserByEmail(email)
 	if err != nil {
+		// Same bcrypt cost as a real check, so response time does not reveal
+		// whether the e-mail address has an account.
+		CheckPassword(dummyHash, password)
 		return nil, ErrInvalidCredentials
 	}
 	if !CheckPassword(user.Password, password) {
@@ -95,7 +101,7 @@ func (s *Service) Login(email, password, otp, ip, userAgent string) (*LoginResul
 	// and revoke active sessions; Redis remains the source of truth for auth.
 	if err := s.repo.CreateSession(&users.Session{
 		UserID:    user.ID,
-		Token:     token,
+		Token:     hashToken(token),
 		IPAddress: ip,
 		UserAgent: userAgent,
 		ExpiredAt: time.Now().Add(ttl),
@@ -114,7 +120,7 @@ func (s *Service) Logout(token string, userID *uint64) {
 		return
 	}
 	_ = session.Delete(context.Background(), s.redis, token, *userID)
-	s.repo.DeleteSessionByToken(token)
+	s.repo.DeleteSessionByToken(hashToken(token))
 }
 
 func (s *Service) Me(userID uint64) (*users.User, error) {
@@ -148,7 +154,7 @@ func (s *Service) ForgotPassword(email string) {
 	token, _ := session.GenerateToken()
 	reset := users.PasswordResetToken{
 		Email:     email,
-		Token:     token,
+		Token:     hashToken(token),
 		ExpiredAt: time.Now().Add(1 * time.Hour),
 	}
 	_ = s.repo.CreatePasswordResetToken(&reset)
@@ -162,7 +168,7 @@ func (s *Service) ResetPassword(token, newPassword string) error {
 		return err
 	}
 
-	reset, err := s.repo.FindValidResetToken(token)
+	reset, err := s.repo.FindValidResetToken(hashToken(token))
 	if err != nil {
 		return ErrInvalidResetToken
 	}
@@ -187,7 +193,23 @@ func (s *Service) ResetPassword(token, newPassword string) error {
 	return nil
 }
 
-func (s *Service) ChangePassword(userID uint64, currentPassword, newPassword string) error {
+// hashToken is what the database keeps of session and reset tokens: a leaked
+// table (backup, SQL access) must not hand out live credentials.
+func hashToken(t string) string {
+	sum := sha256.Sum256([]byte(t))
+	return hex.EncodeToString(sum[:])
+}
+
+// dummyHash is a bcrypt hash (cost 12) of a random string, compared against
+// when the e-mail is unknown.
+var dummyHash = func() string {
+	h, _ := HashPassword(fmt.Sprintf("unused-%d", time.Now().UnixNano()))
+	return h
+}()
+
+// ChangePassword also signs out every other session of the user (keepToken
+// stays valid), so a stolen session does not survive a password change.
+func (s *Service) ChangePassword(userID uint64, currentPassword, newPassword, keepToken string) error {
 	if err := ValidatePasswordPolicy(newPassword); err != nil {
 		return err
 	}
@@ -215,6 +237,8 @@ func (s *Service) ChangePassword(userID uint64, currentPassword, newPassword str
 	}
 	s.repo.UpdatePassword(user, hashed)
 	s.repo.CreatePasswordHistory(&users.PasswordHistory{UserID: user.ID, Password: hashed, CreatedAt: time.Now()})
+	_ = session.DeleteOthersForUser(context.Background(), s.redis, user.ID, keepToken)
+	s.repo.DB.Where("user_id = ? AND token <> ?", user.ID, hashToken(keepToken)).Delete(&users.Session{})
 	return nil
 }
 

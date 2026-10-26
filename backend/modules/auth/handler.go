@@ -208,7 +208,8 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		utils.Error(c, 400, "invalid request payload")
 		return
 	}
-	if err := h.Service.ChangePassword(*userID, req.CurrentPassword, req.NewPassword); err != nil {
+	token, _ := c.Cookie(session.CookieName)
+	if err := h.Service.ChangePassword(*userID, req.CurrentPassword, req.NewPassword, token); err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			utils.Error(c, 404, err.Error())
 			return

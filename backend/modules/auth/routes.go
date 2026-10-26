@@ -22,8 +22,13 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, sessionAuth gin.HandlerFun
 	g.POST("/login", middleware.LoginLockout(h.Redis, h.Cfg.RateLimitLogin, h.Cfg.RateLimitLoginLockoutMin), loginLimiter, h.Login)
 	g.POST("/logout", sessionAuth, h.Logout)
 	g.GET("/me", sessionAuth, h.Me)
-	g.POST("/forgot-password", forgotLimiter, h.ForgotPassword)
-	g.POST("/reset-password", h.ResetPassword)
+	// No e-mail is ever sent (the reset token is only printed to the service
+	// log), so in production these endpoints would be dead weight and an extra
+	// attack surface; locked-out admins use "rpanel set-admin" on the server.
+	if h.Cfg.AppEnv != "production" {
+		g.POST("/forgot-password", forgotLimiter, h.ForgotPassword)
+		g.POST("/reset-password", forgotLimiter, h.ResetPassword)
+	}
 	g.PUT("/change-password", sessionAuth, h.ChangePassword)
 
 	// 2FA management: rate limited so a stolen session cannot brute-force codes.

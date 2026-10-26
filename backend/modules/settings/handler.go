@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"errors"
+
 	"rpanel/backend/modules/activity_logs"
 	"rpanel/backend/storage"
 	"rpanel/backend/utils"
@@ -63,6 +65,10 @@ func (h *Handler) BulkUpdate(c *gin.Context) {
 	}
 
 	if err := h.Service.BulkUpdate(payload); err != nil {
+		if errors.Is(err, ErrInvalidSetting) {
+			utils.Error(c, 400, err.Error())
+			return
+		}
 		utils.Error(c, 500, "failed to update settings")
 		return
 	}

@@ -77,6 +77,13 @@ wait_healthy() {
 # ----------------------------------------------------------------- upgrade
 if [ -f "$INSTALL_DIR/.env" ]; then
   log "Existing installation found: upgrading (secrets are kept)"
+  # Panels installed before 1.3.1 serve the web UI without a Content-Security-Policy.
+  conf=/etc/nginx/sites-available/rpanel-panel.conf
+  if [ -f "$conf" ] && ! grep -q "Content-Security-Policy" "$conf"; then
+    cp -p "$conf" "$conf.bak"
+    sed -i "/add_header Referrer-Policy/a\\    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;" "$conf"
+    if nginx -t >/dev/null 2>&1; then systemctl reload nginx; rm -f "$conf.bak"; else mv -f "$conf.bak" "$conf"; warn "could not add the CSP header to $conf"; fi
+  fi
   systemctl stop rpanel 2>/dev/null || true
   # Keep the previous build so a failed upgrade can be undone.
   rm -rf "$INSTALL_DIR/web.prev"

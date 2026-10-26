@@ -53,6 +53,19 @@ var (
 	}
 )
 
+// ProtectPanelDatabase hides the panel's own database and role from this module
+// (listing, browsing, SQL, backups, drop, grants): they hold password hashes,
+// 2FA secrets and session data, and dropping them would take the panel down.
+// Called once at start-up, before any request is served.
+func ProtectPanelDatabase(dbName, dbUser string) {
+	if dbName != "" {
+		systemDBs[strings.ToLower(dbName)] = true
+	}
+	if dbUser != "" {
+		systemUsers[strings.ToLower(dbUser)] = true
+	}
+}
+
 func IsSystemDB(n string) bool   { return systemDBs[strings.ToLower(n)] }
 func IsSystemUser(n string) bool { return systemUsers[strings.ToLower(n)] }
 

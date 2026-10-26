@@ -42,8 +42,7 @@ func (s *LocalStorage) Upload(file multipart.File, header *multipart.FileHeader,
 		return "", err
 	}
 
-	ext := filepath.Ext(header.Filename)
-	filename := uuid.New().String() + ext
+	filename := uuid.New().String() + extForMime[contentType]
 
 	dir := filepath.Join(s.BasePath, folder)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

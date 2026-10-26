@@ -109,7 +109,7 @@ func Load() *Config {
 		SessionMaxConcurrent: getEnvInt("SESSION_MAX_CONCURRENT", 3),
 
 		StoragePath:    getEnv("STORAGE_PATH", "./storage/uploads"),
-		FMRoots:        splitList(getEnv("FM_ROOTS", "/www,/home")),
+		FMRoots:        splitList(getEnv("FM_ROOTS", "/www/wwwroot")),
 		StorageMaxSize: int64(getEnvInt("STORAGE_MAX_SIZE", 2097152)),
 
 		NginxAvailableDir: getEnv("NGINX_SITES_AVAILABLE", "/etc/nginx/sites-available"),

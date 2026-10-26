@@ -2,7 +2,7 @@
 // middleware stack, module routes, and the migrate/seed CLI subcommands.
 //
 // @title						RPanel API
-// @version					1.3.0
+// @version					1.3.1
 // @description				Admin Panel Base Project API
 // @host						localhost:8800
 // @BasePath					/api/v1
@@ -51,7 +51,7 @@ import (
 
 // AppVersion is surfaced unauthenticated at GET /api/v1/version for the
 // frontend footer — bump alongside the @version annotation above.
-const AppVersion = "1.3.0"
+const AppVersion = "1.3.1"
 
 func main() {
 	cfg := config.Load()
@@ -141,7 +141,12 @@ func main() {
 	router.Use(middleware.MaintenanceMode(rdb, db))
 	router.Use(middleware.RateLimit(rdb, "api", cfg.RateLimitAPI, time.Minute, func(c *gin.Context) string { return c.ClientIP() }))
 
-	router.Static("/uploads", cfg.StoragePath)
+	// Uploaded files are user content: never let the browser run them as a page.
+	router.Group("/uploads", func(c *gin.Context) {
+		c.Header("Content-Security-Policy", "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox")
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Next()
+	}).Static("/", cfg.StoragePath)
 
 	sessionAuth := middleware.SessionAuth(rdb, db)
 	guard := func(menuPath, action string) gin.HandlerFunc {
@@ -221,7 +226,7 @@ func main() {
 	terminalHandler.RegisterRoutes(api, guard)
 	terminal.NewTemplateHandler(terminal.NewTemplateService(db)).RegisterRoutes(api, guard)
 
-	fileManagerHandler := filemanager.NewHandler(cfg.FMRoots)
+	fileManagerHandler := filemanager.NewHandler(cfg.FMRoots, cfg.CronDataDir, cfg.ComposeDir, cfg.BackupDir, cfg.CronDir, cfg.PrivateStoragePath)
 	fileManagerHandler.RegisterRoutes(api, guard)
 
 	filesHandler := files.NewHandler(privateStorage)

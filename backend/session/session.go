@@ -82,6 +82,22 @@ func Delete(ctx context.Context, rdb *redis.Client, token string, userID uint64)
 }
 
 // DeleteAllForUser force-logs-out every session belonging to a user.
+// DeleteOthersForUser removes every session of userID except keep.
+func DeleteOthersForUser(ctx context.Context, rdb *redis.Client, userID uint64, keep string) error {
+	tokens, err := rdb.ZRange(ctx, userSetKey(userID), 0, -1).Result()
+	if err != nil {
+		return err
+	}
+	for _, t := range tokens {
+		if t == keep {
+			continue
+		}
+		rdb.Del(ctx, key(t))
+		rdb.ZRem(ctx, userSetKey(userID), t)
+	}
+	return nil
+}
+
 func DeleteAllForUser(ctx context.Context, rdb *redis.Client, userID uint64) error {
 	tokens, err := rdb.ZRange(ctx, userSetKey(userID), 0, -1).Result()
 	if err != nil {

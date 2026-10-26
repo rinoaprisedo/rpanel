@@ -76,7 +76,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	actorID := utils.CurrentUserID(c)
-	role, err := h.Service.Create(RoleInput{Name: req.Name, Description: req.Description, IsSuperadmin: req.IsSuperadmin, ActorID: actorID})
+	role, err := h.Service.Create(RoleInput{Name: req.Name, Description: req.Description, IsSuperadmin: req.IsSuperadmin, ActorID: actorID, ActorIsSuperadmin: utils.IsSuperadmin(c)})
 	if err != nil {
 		utils.Error(c, 400, err.Error())
 		return
@@ -102,7 +102,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	actorID := utils.CurrentUserID(c)
-	before, after, err := h.Service.Update(c.Param("uuid"), RoleInput{Name: req.Name, Description: req.Description, IsSuperadmin: req.IsSuperadmin, ActorID: actorID})
+	before, after, err := h.Service.Update(c.Param("uuid"), RoleInput{Name: req.Name, Description: req.Description, IsSuperadmin: req.IsSuperadmin, ActorID: actorID, ActorIsSuperadmin: utils.IsSuperadmin(c)})
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrNotFound):
@@ -195,12 +195,17 @@ func (h *Handler) UpdatePermissions(c *gin.Context) {
 		items = append(items, PermissionInput{MenuUUID: p.MenuUUID, CanView: p.CanView, CanCreate: p.CanCreate, CanEdit: p.CanEdit, CanDelete: p.CanDelete})
 	}
 
-	if err := h.Service.UpdatePermissions(c.Param("uuid"), items); err != nil {
-		utils.Error(c, 404, "role not found")
+	actorID := utils.CurrentUserID(c)
+	if err := h.Service.UpdatePermissions(c.Param("uuid"), items, actorID, utils.IsSuperadmin(c)); err != nil {
+		switch {
+		case errors.Is(err, ErrSuperadminLocked), errors.Is(err, ErrOwnRole):
+			utils.Error(c, 403, err.Error())
+		default:
+			utils.Error(c, 404, "role not found")
+		}
 		return
 	}
 
-	actorID := utils.CurrentUserID(c)
 	activity_logs.LogActivity(actorID, activity_logs.ActionUpdate, "role_permissions", c.Param("uuid"), nil, req.Permissions, c.ClientIP(), c.Request.UserAgent())
 	utils.Success(c, 200, "permissions updated", nil)
 }

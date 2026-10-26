@@ -20,13 +20,19 @@ const module = "file-manager"
 
 // Handler is the HTTP layer for the file manager.
 type Handler struct {
-	roots []string
+	roots  []string
+	denied []string
 }
 
-func NewHandler(roots []string) *Handler { return &Handler{roots: roots} }
+// NewHandler: roots bound non-superadmin users; denied are directories inside
+// those roots they may never touch (cron scripts run as root, compose files
+// start containers, database dumps hold every row).
+func NewHandler(roots []string, denied ...string) *Handler {
+	return &Handler{roots: roots, denied: denied}
+}
 
 func (h *Handler) access(c *gin.Context) Access {
-	return Access{Roots: h.roots, Unrestricted: utils.IsSuperadmin(c)}
+	return Access{Roots: h.roots, Denied: h.denied, Unrestricted: utils.IsSuperadmin(c)}
 }
 
 // fail maps service/system errors to HTTP responses without leaking OS paths.

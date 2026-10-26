@@ -3,6 +3,7 @@ package filemanager
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"rpanel/backend/system"
 	"rpanel/backend/utils"
 
 	"github.com/gin-gonic/gin"
@@ -96,3 +98,24 @@ func TestChownRequiresSuperadmin(t *testing.T) {
 }
 
 var _ = http.StatusOK
+
+func TestRestrictedUsersCannotReachSensitiveDirs(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"cron", "site/.ssh", "site/public"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	os.Symlink(filepath.Join(root, "cron"), filepath.Join(root, "site/public/link"))
+	a := Access{Roots: []string{root}, Denied: []string{filepath.Join(root, "cron")}}
+	for _, p := range []string{"cron", "cron/job.sh", "site/.ssh/authorized_keys", "site/public/link/job.sh"} {
+		if _, err := a.Resolve(filepath.Join(root, p)); !errors.Is(err, system.ErrPathDenied) {
+			t.Errorf("%s: want denied, got %v", p, err)
+		}
+	}
+	if _, err := a.Resolve(filepath.Join(root, "site/public/index.php")); err != nil {
+		t.Errorf("normal file denied: %v", err)
+	}
+	a.Unrestricted = true
+	if _, err := a.Resolve(filepath.Join(root, "cron/job.sh")); err != nil {
+		t.Errorf("superadmin denied: %v", err)
+	}
+}

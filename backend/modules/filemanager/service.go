@@ -45,12 +45,36 @@ var (
 // Access describes what the current user may touch.
 type Access struct {
 	Roots        []string
+	Denied       []string
 	Unrestricted bool
 }
 
-// Resolve validates p against the access rules.
+// Resolve validates p against the access rules. Restricted users additionally
+// never reach a denied directory or any .ssh directory (authorized_keys = login).
 func (a Access) Resolve(p string) (string, error) {
-	return system.ResolvePath(p, a.Roots, a.Unrestricted)
+	clean, err := system.ResolvePath(p, a.Roots, a.Unrestricted)
+	if err != nil || a.Unrestricted {
+		return clean, err
+	}
+	real := system.RealPath(clean)
+	for _, cand := range []string{clean, real} {
+		for _, part := range strings.Split(cand, string(filepath.Separator)) {
+			if part == ".ssh" || part == ".gnupg" {
+				return "", system.ErrPathDenied
+			}
+		}
+		for _, d := range a.Denied {
+			if d == "" {
+				continue
+			}
+			for _, dd := range []string{filepath.Clean(d), system.RealPath(d)} {
+				if cand == dd || strings.HasPrefix(cand, dd+string(filepath.Separator)) {
+					return "", system.ErrPathDenied
+				}
+			}
+		}
+	}
+	return clean, nil
 }
 
 // protected reports paths that must never be deleted/renamed/moved: the

@@ -71,3 +71,7 @@ func evalExisting(p string) string {
 		cur = parent
 	}
 }
+
+// RealPath resolves symlinks in the longest existing prefix of p, so it also
+// works for a file that is about to be created.
+func RealPath(p string) string { return evalExisting(filepath.Clean(p)) }

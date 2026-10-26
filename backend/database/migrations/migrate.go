@@ -41,6 +41,7 @@ func Run(db *gorm.DB) {
 	}
 
 	applyPartialUniqueIndexes(db)
+	hashStoredTokens(db)
 
 	log.Println("migrations applied successfully")
 }
@@ -62,4 +63,19 @@ func applyPartialUniqueIndexes(db *gorm.DB) {
 			log.Fatalf("failed to apply partial unique index (%s): %v", stmt, err)
 		}
 	}
+}
+
+// hashStoredTokens runs once: from 1.3.1 the sessions mirror and reset tokens
+// hold SHA-256 hashes, so rows written by older versions (raw, usable tokens)
+// are dropped. Redis stays the source of truth, so nobody is logged out.
+func hashStoredTokens(db *gorm.DB) {
+	const marker = "migration_tokens_hashed_v1"
+	var n int64
+	db.Model(&settings.Setting{}).Where("key = ?", marker).Count(&n)
+	if n > 0 {
+		return
+	}
+	db.Exec("DELETE FROM sessions")
+	db.Exec("DELETE FROM password_reset_tokens")
+	db.Create(&settings.Setting{Key: marker, Value: "true", Type: settings.TypeBoolean})
 }

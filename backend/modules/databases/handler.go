@@ -17,6 +17,7 @@ const module = "databases"
 type Handler struct{ svc *Service }
 
 func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
+	ProtectPanelDatabase(cfg.DBName, cfg.DBUser)
 	return &Handler{svc: NewService(db, cfg.DBSecretKey, system.Default, cfg.BackupDir)}
 }
 

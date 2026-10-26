@@ -17,6 +17,9 @@ var (
 	ErrNotFound          = errors.New("user not found")
 	ErrEmailInUse        = errors.New("failed to create user (email may already be in use)")
 	ErrSuperadminLocked  = errors.New("superadmin user is protected from this action")
+	ErrSuperadminRole    = errors.New("only a superadmin can assign the superadmin role")
+	ErrBadStatus         = errors.New("status must be active, inactive or suspended")
+	ErrWeakPassword      = errors.New("password must be at least 8 characters")
 	ErrSelfDelete        = errors.New("you cannot delete your own account")
 	ErrAvatarFileMissing = errors.New("avatar file is required")
 )
@@ -67,9 +70,29 @@ type CreateInput struct {
 	Status   string
 	RoleUUID string
 	ActorID  *uint64
+	// ActorIsSuperadmin gates handing out the superadmin role: a user manager
+	// must not be able to create a superadmin (or become one).
+	ActorIsSuperadmin bool
+}
+
+func validStatus(s string) bool {
+	switch UserStatus(s) {
+	case StatusActive, StatusInactive, StatusSuspended:
+		return true
+	}
+	return false
 }
 
 func (s *Service) Create(in CreateInput) (*User, error) {
+	if in.RoleUUID != "" && !in.ActorIsSuperadmin && s.repo.RoleIsSuperadmin(in.RoleUUID) {
+		return nil, ErrSuperadminRole
+	}
+	if in.Status != "" && !validStatus(in.Status) {
+		return nil, ErrBadStatus
+	}
+	if len(in.Password) < 8 {
+		return nil, ErrWeakPassword
+	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), 12)
 	if err != nil {
 		return nil, err
@@ -107,6 +130,9 @@ type UpdateInput struct {
 	RoleUUID     string
 	RoleProvided bool
 	ActorID      *uint64
+	// See CreateInput.ActorIsSuperadmin; additionally a non-superadmin may not
+	// edit a superadmin account at all (password/email change = takeover).
+	ActorIsSuperadmin bool
 }
 
 // Update returns the pre-update snapshot alongside the saved user so callers
@@ -115,6 +141,20 @@ func (s *Service) Update(uuidStr string, in UpdateInput) (before *User, after *U
 	user, err := s.repo.FindByUUID(uuidStr)
 	if err != nil {
 		return nil, nil, ErrNotFound
+	}
+	if !in.ActorIsSuperadmin {
+		if hasSuperadminRole(user) {
+			return nil, nil, ErrSuperadminLocked
+		}
+		if in.RoleProvided && in.RoleUUID != "" && s.repo.RoleIsSuperadmin(in.RoleUUID) {
+			return nil, nil, ErrSuperadminRole
+		}
+	}
+	if in.Status != "" && !validStatus(in.Status) {
+		return nil, nil, ErrBadStatus
+	}
+	if in.Password != "" && len(in.Password) < 8 {
+		return nil, nil, ErrWeakPassword
 	}
 	old := *user
 	statusChanged := in.Status != "" && UserStatus(in.Status) != old.Status
@@ -177,6 +217,9 @@ func (s *Service) Delete(uuidStr string, actorID *uint64, actorIsSuperadmin bool
 }
 
 func (s *Service) UpdateStatus(uuidStr, status string) (oldStatus UserStatus, user *User, err error) {
+	if !validStatus(status) {
+		return "", nil, ErrBadStatus
+	}
 	user, err = s.repo.FindByUUID(uuidStr)
 	if err != nil {
 		return "", nil, ErrNotFound
@@ -195,10 +238,13 @@ func (s *Service) UpdateStatus(uuidStr, status string) (oldStatus UserStatus, us
 	return oldStatus, user, nil
 }
 
-func (s *Service) UploadAvatar(uuidStr string, file multipart.File, header *multipart.FileHeader) (string, error) {
+func (s *Service) UploadAvatar(uuidStr string, file multipart.File, header *multipart.FileHeader, actorIsSuperadmin bool) (string, error) {
 	user, err := s.repo.FindByUUID(uuidStr)
 	if err != nil {
 		return "", ErrNotFound
+	}
+	if hasSuperadminRole(user) && !actorIsSuperadmin {
+		return "", ErrSuperadminLocked
 	}
 
 	path, err := s.storage.Upload(file, header, "avatars")

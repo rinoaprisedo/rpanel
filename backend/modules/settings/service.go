@@ -3,7 +3,10 @@ package settings
 import (
 	"context"
 	"errors"
+	"fmt"
 	"mime/multipart"
+	"regexp"
+	"strings"
 
 	"rpanel/backend/storage"
 
@@ -63,7 +66,32 @@ func (s *Service) Public() (map[string]string, error) {
 	return result, nil
 }
 
+// ErrInvalidSetting rejects unknown keys and malformed values: logo/favicon
+// paths are set only through Upload, never to an arbitrary (external) URL.
+var ErrInvalidSetting = errors.New("invalid setting")
+
+var hexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func validSetting(key, value string) bool {
+	switch key {
+	case "app_name":
+		return len(value) > 0 && len(value) <= 60 && !strings.ContainsAny(value, "<>\r\n")
+	case "primary_color":
+		return hexColorRe.MatchString(value)
+	case "maintenance_mode":
+		return value == "true" || value == "false"
+	case "app_logo", "app_favicon":
+		return value == "" // clearing only; setting goes through Upload
+	}
+	return false
+}
+
 func (s *Service) BulkUpdate(payload map[string]string) error {
+	for key, value := range payload {
+		if !validSetting(key, value) {
+			return fmt.Errorf("%w: %s", ErrInvalidSetting, key)
+		}
+	}
 	for key, value := range payload {
 		if err := s.repo.Upsert(key, value, TypeString); err != nil {
 			return err

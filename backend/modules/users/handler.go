@@ -97,6 +97,8 @@ func (h *Handler) Create(c *gin.Context) {
 		Status:   req.Status,
 		RoleUUID: req.RoleUUID,
 		ActorID:  actorID,
+
+		ActorIsSuperadmin: utils.IsSuperadmin(c),
 	})
 	if err != nil {
 		utils.Error(c, 400, err.Error())
@@ -132,18 +134,23 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	actorID := utils.CurrentUserID(c)
-	in := UpdateInput{Name: req.Name, Email: req.Email, Password: req.Password, Status: req.Status, ActorID: actorID}
+	in := UpdateInput{Name: req.Name, Email: req.Email, Password: req.Password, Status: req.Status, ActorID: actorID, ActorIsSuperadmin: utils.IsSuperadmin(c)}
 	if req.RoleUUID != nil {
 		in.RoleProvided = true
 		in.RoleUUID = *req.RoleUUID
 	}
 	before, after, err := h.Service.Update(c.Param("uuid"), in)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		switch {
+		case errors.Is(err, ErrNotFound):
 			utils.Error(c, 404, "user not found")
-			return
+		case errors.Is(err, ErrSuperadminLocked), errors.Is(err, ErrSuperadminRole):
+			utils.Error(c, 403, err.Error())
+		case errors.Is(err, ErrBadStatus), errors.Is(err, ErrWeakPassword):
+			utils.Error(c, 400, err.Error())
+		default:
+			utils.Error(c, 400, "failed to update user")
 		}
-		utils.Error(c, 400, "failed to update user")
 		return
 	}
 
@@ -208,6 +215,8 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 			utils.Error(c, 404, "user not found")
 		case errors.Is(err, ErrSuperadminLocked):
 			utils.Error(c, 403, "superadmin status cannot be changed")
+		case errors.Is(err, ErrBadStatus):
+			utils.Error(c, 400, err.Error())
 		default:
 			utils.Error(c, 500, "failed to update status")
 		}
@@ -241,7 +250,7 @@ func (h *Handler) UploadAvatar(c *gin.Context) {
 	}
 	defer file.Close()
 
-	url, err := h.Service.UploadAvatar(c.Param("uuid"), file, fileHeader)
+	url, err := h.Service.UploadAvatar(c.Param("uuid"), file, fileHeader, utils.IsSuperadmin(c))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			utils.Error(c, 404, "user not found")

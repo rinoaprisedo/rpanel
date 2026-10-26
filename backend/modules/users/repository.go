@@ -90,6 +90,13 @@ func (r *Repository) Delete(user *User, actorID *uint64) error {
 
 // SetRole resolves a role UUID to its numeric ID and assigns it to the user.
 // An empty roleUUID clears the user's role.
+// RoleIsSuperadmin reports whether the role with this uuid grants superadmin.
+func (r *Repository) RoleIsSuperadmin(roleUUID string) bool {
+	var n int64
+	r.DB.Model(&roles.Role{}).Where("uuid = ? AND is_superadmin = ?", roleUUID, true).Count(&n)
+	return n > 0
+}
+
 func (r *Repository) SetRole(user *User, roleUUID string) error {
 	if roleUUID == "" {
 		user.RoleID = nil

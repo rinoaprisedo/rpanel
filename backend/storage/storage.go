@@ -42,3 +42,12 @@ var allowedMimeTypes = map[string]bool{
 	"image/png":  true,
 	"image/webp": true,
 }
+
+// extForMime picks the stored file's extension from the sniffed content type,
+// never from the client's file name: a ".html"/".js" name on bytes that sniff
+// as an image would otherwise be served back as markup or script.
+var extForMime = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+}
