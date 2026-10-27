@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import logoLandscape from '../../assets/logo-landscape-rpanel.webp'
 import { useQuery } from '@tanstack/react-query'
 import * as Icons from 'lucide-react'
 import { LayoutGrid, X, FileCode2 } from 'lucide-react'
@@ -20,6 +21,7 @@ function Sidebar() {
   const toggle = useSidebarStore((s) => s.toggle)
   const close = useSidebarStore((s) => s.close)
   const appName = useSettingsStore((s) => s.appName)
+  const logo = useSettingsStore((s) => s.logo)
   const isSuperadmin = useAuthStore((s) => !!s.user?.is_superadmin)
   const { canView } = usePermission()
 
@@ -45,7 +47,7 @@ function Sidebar() {
         }`}
       >
         <div className="relative flex h-[60px] items-center justify-center border-b border-surface-border px-4">
-          <span className="truncate text-[17px] font-bold tracking-[-.02em] text-text-primary">{appName}</span>
+          <img src={logo || logoLandscape} alt={appName} className="h-11 max-w-full object-contain" />
           <button onClick={toggle} className="absolute right-4 text-text-secondary lg:hidden">
             <X size={20} />
           </button>
@@ -97,6 +99,12 @@ function Sidebar() {
             )
           })}
         </nav>
+        <div className="border-t border-surface-border px-4 py-3 text-center text-[11px] text-text-tertiary">
+          Develop by{' '}
+          <a href="https://rinoaprisedo.com" target="_blank" rel="noopener noreferrer" className="font-medium hover:text-text-primary hover:underline">
+            rinoaprisedo.com
+          </a>
+        </div>
       </aside>
       {!isCollapsed && (
         <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={toggle} />
