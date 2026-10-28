@@ -2,7 +2,7 @@
 // middleware stack, module routes, and the migrate/seed CLI subcommands.
 //
 // @title						RPanel API
-// @version					1.3.2
+// @version					1.3.3
 // @description				Admin Panel Base Project API
 // @host						localhost:8800
 // @BasePath					/api/v1
@@ -36,6 +36,7 @@ import (
 	"rpanel/backend/modules/files"
 	"rpanel/backend/modules/firewall"
 	"rpanel/backend/modules/menus"
+	"rpanel/backend/modules/panelssl"
 	"rpanel/backend/modules/roles"
 	"rpanel/backend/modules/settings"
 	"rpanel/backend/modules/terminal"
@@ -51,7 +52,7 @@ import (
 
 // AppVersion is surfaced unauthenticated at GET /api/v1/version for the
 // frontend footer — bump alongside the @version annotation above.
-const AppVersion = "1.3.2"
+const AppVersion = "1.3.3"
 
 func main() {
 	cfg := config.Load()
@@ -94,6 +95,18 @@ func main() {
 				log.Fatalf("reset failed: %v", err)
 			}
 			log.Printf("two-factor authentication disabled for %s", u.Email)
+			return
+		case "panel-ssl":
+			// Used by the installer: panel-ssl issue <domain> <email>
+			if len(os.Args) < 5 || os.Args[2] != "issue" {
+				log.Fatal("usage: panel-ssl issue <domain> <email>")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+			defer cancel()
+			if err := panelssl.NewServiceFromConfig(cfg).IssueLetsEncrypt(ctx, os.Args[3], os.Args[4]); err != nil {
+				log.Fatalf("panel-ssl: %v", err)
+			}
+			log.Printf("panel certificate installed for %s", os.Args[3])
 			return
 		case "set-admin":
 			db := config.ConnectDatabase(cfg)
@@ -221,6 +234,7 @@ func main() {
 
 	websiteHandler := website.NewHandler(db, cfg)
 	websiteHandler.RegisterRoutes(api, guard)
+	panelssl.NewHandler(cfg).RegisterRoutes(api, guard)
 
 	terminalHandler := terminal.NewHandler(context.Background(), cfg.TerminalShell, cfg.TerminalIdleMinutes, cfg.TerminalMaxSessions, cfg.FrontendURL)
 	terminalHandler.RegisterRoutes(api, guard)

@@ -50,6 +50,12 @@ type Config struct {
 	AcmeRoot          string
 	CertbotEmail      string
 
+	// Panel SSL: nginx include owned by the panel (server_name + certificate), the panel's public port.
+	PanelTLSConf   string
+	PanelGuardConf string
+	PanelSSLDir    string
+	PanelPort      string
+
 	// Database manager.
 	DBSecretKey string // 32 bytes, hex or any passphrase (hashed): encrypts stored DB admin passwords
 	BackupDir   string
@@ -118,6 +124,11 @@ func Load() *Config {
 		WebRoot:           getEnv("WEB_ROOT", "/www/wwwroot"),
 		AcmeRoot:          getEnv("ACME_ROOT", "/var/www/letsencrypt"),
 		CertbotEmail:      getEnv("CERTBOT_EMAIL", ""),
+
+		PanelTLSConf:   getEnv("PANEL_TLS_CONF", ""),
+		PanelGuardConf: getEnv("PANEL_GUARD_CONF", ""),
+		PanelSSLDir:    getEnv("PANEL_SSL_DIR", ""),
+		PanelPort:      getEnv("PANEL_PORT", ""),
 
 		DBSecretKey: getEnv("SECRET_KEY", getEnv("DB_SECRET_KEY", "")),
 		BackupDir:   getEnv("BACKUP_DIR", "/www/backup/database"),

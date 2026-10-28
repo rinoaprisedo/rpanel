@@ -11,6 +11,7 @@ systemctl disable --now rpanel 2>/dev/null || true
 rm -f /etc/systemd/system/rpanel.service
 systemctl daemon-reload
 rm -f /etc/nginx/sites-enabled/rpanel-panel.conf /etc/nginx/sites-available/rpanel-panel.conf
+rm -f /etc/nginx/sites-enabled/rpanel-panel-acme.conf /etc/nginx/sites-available/rpanel-panel-acme.conf
 nginx -t && systemctl reload nginx || echo "nginx config test failed; check it manually" >&2
 rm -f /etc/cron.d/rpanel-* /etc/letsencrypt/renewal-hooks/deploy/rpanel-nginx-reload.sh
 

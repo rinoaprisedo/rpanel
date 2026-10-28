@@ -25,7 +25,7 @@ func NewHandler(db *gorm.DB, cfg *config.Config) *Handler {
 		LogDir: cfg.NginxLogDir, AcmeRoot: cfg.AcmeRoot,
 	}
 	return &Handler{svc: NewService(db, ng, system.Default, Settings{
-		WebRoot: cfg.WebRoot, AcmeRoot: cfg.AcmeRoot, LogDir: cfg.NginxLogDir, CertbotEmail: cfg.CertbotEmail,
+		WebRoot: cfg.WebRoot, AcmeRoot: cfg.AcmeRoot, LogDir: cfg.NginxLogDir, CertbotEmail: cfg.CertbotEmail, PanelTLSConf: cfg.PanelTLSConf,
 	})}
 }
 

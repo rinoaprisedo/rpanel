@@ -1,4 +1,6 @@
+import { useSearchParams } from 'react-router-dom'
 import Tabs from '../../components/ui/Tabs'
+import PanelSsl from './PanelSsl'
 import { useEffect, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -12,10 +14,11 @@ import { fileURL } from '../../utils/url'
 import usePageActions from '../../hooks/usePageActions'
 import useSettingsStore from '../../store/settingsStore'
 
-const tabs = ['General', 'Appearance', 'Maintenance']
+const tabs = ['General', 'Appearance', 'Panel SSL', 'Maintenance']
 
 function Settings() {
-  const [tab, setTab] = useState('General')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState(params.get('tab') === 'panel-ssl' ? 'Panel SSL' : 'General')
   const [appName, setAppName] = useState('')
   const [maintenance, setMaintenance] = useState(false)
   const [logoPreview, setLogoPreview] = useState(null)
@@ -145,6 +148,8 @@ function Settings() {
             </div>
           </div>
         )}
+
+        {tab === 'Panel SSL' && <PanelSsl />}
 
         {tab === 'Maintenance' && (
           <div className="max-w-md space-y-4">

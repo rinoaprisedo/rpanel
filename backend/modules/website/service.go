@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"rpanel/backend/modules/panelssl"
 	"rpanel/backend/system"
 
 	"gorm.io/gorm"
@@ -33,6 +34,7 @@ type Settings struct {
 	AcmeRoot     string
 	LogDir       string
 	CertbotEmail string
+	PanelTLSConf string // when set, the panel's own domain cannot be used for a website
 }
 
 type Service struct {
@@ -95,6 +97,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Website, error) 
 		PHPVersion: in.PHPVersion, ProxyTarget: in.ProxyTarget, Status: StatusRunning,
 	}
 	w.CreatedBy, w.UpdatedBy = in.ActorID, in.ActorID
+	if pd := panelssl.CurrentDomain(s.cfg.PanelTLSConf); pd != "" && pd == w.Domain {
+		return nil, fmt.Errorf("%w: %s is the panel's own domain; use another (sub)domain for websites", ErrBadInput, w.Domain)
+	}
 	if w.Type == TypeStatic || w.Type == TypePHP {
 		root := in.RootDir
 		if root == "" && system.ValidDomain(w.Domain) {

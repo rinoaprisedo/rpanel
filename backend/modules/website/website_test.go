@@ -541,3 +541,17 @@ func TestSSLStatusAndDisable(t *testing.T) {
 		t.Error("the certificate file must be kept so SSL can be re-enabled")
 	}
 }
+
+func TestCreateRejectsPanelDomain(t *testing.T) {
+	e := setup(t)
+	tls := filepath.Join(t.TempDir(), "panel-tls.conf")
+	os.WriteFile(tls, []byte("# rpanel-panel-ssl mode=letsencrypt domain=panel.example.com\n"), 0o644)
+	e.svc.cfg.PanelTLSConf = tls
+	_, err := e.svc.Create(context.Background(), CreateInput{Domain: "Panel.Example.com", Type: TypeStatic})
+	if !errors.Is(err, ErrBadInput) || !strings.Contains(err.Error(), "panel's own domain") {
+		t.Fatalf("expected the panel domain to be refused, got %v", err)
+	}
+	if e.run.count("nginx", "-t") != 0 {
+		t.Error("nothing should have been applied")
+	}
+}

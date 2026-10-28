@@ -1,5 +1,7 @@
 # Managed by the RPanel installer. Public entry point of the panel:
-#   - TLS on @PANEL_PORT@ (self-signed until you install your own certificate)
+#   - TLS on @PANEL_PORT@; the host name and certificate live in ssl/panel-tls.conf and the
+#     catch-all that drops requests for any other host (e.g. the bare IP) in ssl/panel-guard.conf.
+#     Both are owned by the panel (Settings > Panel SSL) and are never overwritten by updates.
 #   - "secret entrance": every request without the entrance cookie gets a 404;
 #     visiting https://<host>:@PANEL_PORT@@ENTRANCE@ sets the cookie and redirects to /login
 #   - /api and /uploads proxied to the local backend, the SPA served as static files
@@ -11,15 +13,16 @@ map $http_upgrade $rpanel_connection_upgrade {
 server {
     listen @PANEL_PORT@ ssl;
     listen [::]:@PANEL_PORT@ ssl;
-    server_name _;
+    include @INSTALL_DIR@/ssl/panel-tls.conf;
 
-    ssl_certificate     @INSTALL_DIR@/ssl/panel.crt;
-    ssl_certificate_key @INSTALL_DIR@/ssl/panel.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:RPANELSSL:5m;
 
     client_max_body_size 4g;
     server_tokens off;
+
+    # Plain HTTP sent to the HTTPS port: send the browser to https://.
+    error_page 497 =301 https://$host:$server_port$request_uri;
 
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options DENY always;
@@ -61,3 +64,5 @@ server {
         try_files $uri /index.html;
     }
 }
+
+include @INSTALL_DIR@/ssl/panel-guard.conf;

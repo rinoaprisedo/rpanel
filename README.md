@@ -27,27 +27,34 @@ websites, databases, files, containers, scheduled jobs and the firewall, with a 
 - Ubuntu or Debian, amd64 or arm64, a fresh server and root access. Tested on **Ubuntu 24.04 LTS**.
 - Do **not** install it next to another panel (aaPanel, BT, Plesk, ...): both would manage nginx, the firewall and cron.
 - Outbound internet access (apt, GitHub, Let's Encrypt).
+- **A domain** (e.g. `panel.example.com`) whose A record already points at the server, and port 80 reachable: RPanel is served
+  over HTTPS with a Let's Encrypt certificate and refuses access by bare IP.
 
 ## Install
 
 On the server, as root, one command downloads the latest release, verifies its checksum and installs it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rinoaprisedo/rpanel/main/deploy/install-online.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/rinoaprisedo/rpanel/main/deploy/install-online.sh | sudo PANEL_DOMAIN=panel.example.com CERTBOT_EMAIL=you@example.com bash
 ```
 
+(Leave the variables out and the installer asks for the domain and e-mail.) Before installing anything it checks that the
+domain resolves to the server and that port 80 is free, so a wrong DNS record fails immediately instead of half-way.
+
 The installer installs nginx, PostgreSQL, Redis and certbot, creates the panel database, generates every secret,
-writes `/opt/rpanel/.env`, starts the `rpanel` systemd service and puts nginx (TLS + secret entrance) in front of it.
+writes `/opt/rpanel/.env`, starts the `rpanel` systemd service and obtains the Let's Encrypt certificate and puts nginx (HTTPS + secret entrance) in front of it.
 It prints the access URL and the generated administrator password (also saved in `/opt/rpanel/install-info.txt`,
 readable by root only; delete it after storing the password).
 
-Options are environment variables, e.g. `curl ... | sudo PANEL_PORT=8443 ADMIN_EMAIL=me@example.com bash`:
+Options are environment variables, e.g. `curl ... | sudo PANEL_DOMAIN=panel.example.com CERTBOT_EMAIL=me@example.com PANEL_PORT=8443 bash`:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `PANEL_DOMAIN` | asked | **Required.** Host name of the panel; its A record must point at the server |
+| `CERTBOT_EMAIL` | asked | E-mail for Let's Encrypt expiry notices |
+| `SKIP_DNS_CHECK` | off | `1` = do not require the domain to resolve to this server (NAT, Cloudflare proxy) |
 | `PANEL_PORT` | random 20000–59999 | Public HTTPS port of the panel |
 | `ADMIN_EMAIL` | `admin@rpanel.local` | Initial administrator |
-| `PUBLIC_HOST` | first IP of the machine | Host shown in the printed URL |
 | `PANEL_ALLOWED_IPS` | any | Comma-separated IPs/CIDRs allowed to reach the panel |
 | `INSTALL_DIR` | `/opt/rpanel` | Install location |
 | `RPANEL_VERSION` | latest | Install a specific version (or pass it as the first argument) |
@@ -58,8 +65,8 @@ Options are environment variables, e.g. `curl ... | sudo PANEL_PORT=8443 ADMIN_E
 
 ## First login
 
-1. Open the URL the installer printed (`https://<ip>:<port>/<entrance>`) **once**. It sets the entrance cookie;
-   until then every page answers 404. The certificate is self-signed, so the browser warns.
+1. Open the URL the installer printed (`https://<domain>:<port>/<entrance>`) **once**. It sets the entrance cookie;
+   until then every page answers 404. The certificate is valid (Let's Encrypt), so there is no browser warning.
 2. Sign in with the printed e-mail and password.
 3. Enable **2FA** (user menu → Security), then the **firewall** (SSH and the panel port are opened automatically).
 4. Optionally set `PANEL_ALLOWED_IPS` if you have a fixed IP, and change the app name and color in *Settings*.
@@ -79,6 +86,18 @@ websites keep running because nginx serves them. The dashboard shows *RPanel x.y
 
 `FORCE=1 sudo rpanel-update` reinstalls the current version.
 
+**Panels installed before 1.3.3** keep working on their IP address with the self-signed certificate; a banner asks you to
+set a domain. Do it from the panel (*Settings → Panel SSL*: domain + e-mail → *Issue Let's Encrypt certificate*), or let
+the update do it: `sudo PANEL_DOMAIN=panel.example.com CERTBOT_EMAIL=you@example.com rpanel-update`.
+The host name and certificate live in `/opt/rpanel/ssl/panel-tls.conf`, which updates never overwrite.
+
+## Panel domain & HTTPS
+
+*Settings → Panel SSL* shows the domain and certificate and can change them without a terminal: issue a Let's Encrypt
+certificate for another domain, or install your own certificate (wildcard, Cloudflare origin, commercial). Once a domain is set,
+HTTP on port 80 and plain HTTP on the panel port redirect to HTTPS, requests addressed to the bare IP are dropped, and
+HSTS is sent. Renewal is automatic (certbot) and reloads nginx. The panel domain cannot also be used for a website.
+
 ## Uninstall
 
 ```bash
@@ -97,7 +116,7 @@ Treat panel access as root access to the server.
 | Layer | What it does |
 |-------|--------------|
 | Secret entrance | nginx answers 404 to everything until you open `https://host:port/<random>` once, which sets a cookie. |
-| TLS | nginx terminates TLS on the panel port (self-signed at first; install your own certificate for a domain). |
+| TLS | nginx terminates TLS on the panel port with a Let's Encrypt (or your own) certificate for the panel domain; HTTP redirects to HTTPS, access by IP is refused, HSTS is on. |
 | IP allow-list | `PANEL_ALLOWED_IPS` in `/opt/rpanel/.env` (IPs/CIDRs, comma separated) rejects every other address in the backend. |
 | 2FA (TOTP) | Enable it in *user menu → Security*. Recovery codes are shown once. Codes cannot be replayed. |
 | Login protection | Per-IP rate limit and lockout after repeated failures; sessions in Redis; CSRF tokens; `HttpOnly`/`Strict` cookies. |
