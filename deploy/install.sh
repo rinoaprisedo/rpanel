@@ -28,6 +28,37 @@ warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 rand() { openssl rand -hex "$1"; }
 
+# ---- Never update from inside the panel's own process tree ---------------------------------------
+# A shell in the panel's web terminal (or anything else started by rpanel.service) lives in the service's
+# cgroup: stopping the panel for the upgrade would kill this script half-way and leave the panel stopped.
+# Detect that and carry on as a separate systemd unit, with the output in $INSTALL_DIR/update.log.
+if [ "${RPANEL_DETACHED:-0}" != "1" ] && [ "$(id -u)" -eq 0 ] && [ -f "$INSTALL_DIR/.env" ] \
+   && grep -q 'rpanel\.service' /proc/self/cgroup 2>/dev/null && command -v systemd-run >/dev/null 2>&1; then
+  STAGE="$(mktemp -d /var/tmp/rpanel-update.XXXXXX)"
+  cp -a "$SRC/." "$STAGE/"           # the caller removes its temp dir as soon as we return
+  UPDATE_LOG="$INSTALL_DIR/update.log"; : > "$UPDATE_LOG"
+  UNIT="rpanel-install-$$"
+  ENV_ARGS=()
+  for v in PANEL_PORT ADMIN_EMAIL PUBLIC_HOST PANEL_ALLOWED_IPS INSTALL_DIR PANEL_DOMAIN CERTBOT_EMAIL SKIP_DNS_CHECK; do
+    [ -n "${!v:-}" ] && ENV_ARGS+=(-E "$v=${!v}")
+  done
+  printf '\033[1;32m==>\033[0m You are updating from the panel itself: continuing in the background (log: %s)\n' "$UPDATE_LOG"
+  printf '    The panel restarts and this terminal will disconnect; that is expected. Reconnect in a minute.\n'
+  systemd-run --unit="$UNIT" --collect --quiet \
+    -p "StandardOutput=file:$UPDATE_LOG" -p "StandardError=file:$UPDATE_LOG" \
+    -E RPANEL_DETACHED=1 -E "RPANEL_STAGE=$STAGE" "${ENV_ARGS[@]}" "$STAGE/deploy/install.sh" \
+    || { rm -rf "$STAGE"; printf '\033[1;31merror:\033[0m could not start the detached update\n' >&2; exit 1; }
+  tail -n +1 -f "$UPDATE_LOG" 2>/dev/null &
+  TAILPID=$!
+  while systemctl is-active --quiet "$UNIT" 2>/dev/null; do sleep 1; done
+  kill "$TAILPID" 2>/dev/null || true
+  grep -q "Upgrade finished" "$UPDATE_LOG" 2>/dev/null
+  exit $?
+fi
+if [ "${RPANEL_DETACHED:-0}" = "1" ] && [ -n "${RPANEL_STAGE:-}" ]; then
+  trap 'rm -rf "$RPANEL_STAGE"' EXIT
+fi
+
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo ./deploy/install.sh)"
 [ -f /etc/os-release ] || die "cannot detect the operating system"
 # shellcheck disable=SC1091

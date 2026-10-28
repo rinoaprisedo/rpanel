@@ -86,7 +86,7 @@ version with this button still needs the command below.)
 You can also open *Settings → RPanel Update*: **Check for updates** looks for a new release right away, and the tab keeps the
 update history (release notes of every published version, the installed one marked).
 
-From a terminal:
+From a terminal (SSH or the panel's own Terminal; the update continues in the background when started from the panel):
 
 ```bash
 sudo rpanel-update            # latest release
