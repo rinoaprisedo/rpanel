@@ -2,7 +2,7 @@
 // middleware stack, module routes, and the migrate/seed CLI subcommands.
 //
 // @title						RPanel API
-// @version					1.3.3
+// @version					1.4.0
 // @description				Admin Panel Base Project API
 // @host						localhost:8800
 // @BasePath					/api/v1
@@ -32,15 +32,20 @@ import (
 	"rpanel/backend/modules/dashboard"
 	"rpanel/backend/modules/databases"
 	"rpanel/backend/modules/docker"
+	"rpanel/backend/modules/fail2ban"
 	"rpanel/backend/modules/filemanager"
 	"rpanel/backend/modules/files"
 	"rpanel/backend/modules/firewall"
 	"rpanel/backend/modules/menus"
 	"rpanel/backend/modules/panelssl"
 	"rpanel/backend/modules/roles"
+	"rpanel/backend/modules/selfupdate"
 	"rpanel/backend/modules/settings"
+	"rpanel/backend/modules/supervisor"
 	"rpanel/backend/modules/terminal"
+	"rpanel/backend/modules/updates"
 	"rpanel/backend/modules/users"
+	"rpanel/backend/modules/weblogs"
 	"rpanel/backend/modules/website"
 	"rpanel/backend/storage"
 	"rpanel/backend/utils"
@@ -52,7 +57,7 @@ import (
 
 // AppVersion is surfaced unauthenticated at GET /api/v1/version for the
 // frontend footer — bump alongside the @version annotation above.
-const AppVersion = "1.3.3"
+const AppVersion = "1.4.0"
 
 func main() {
 	cfg := config.Load()
@@ -97,13 +102,17 @@ func main() {
 			log.Printf("two-factor authentication disabled for %s", u.Email)
 			return
 		case "panel-ssl":
-			// Used by the installer: panel-ssl issue <domain> <email>
-			if len(os.Args) < 5 || os.Args[2] != "issue" {
-				log.Fatal("usage: panel-ssl issue <domain> <email>")
+			// Used by the installer: panel-ssl issue <domain> [email]
+			if len(os.Args) < 4 || os.Args[2] != "issue" {
+				log.Fatal("usage: panel-ssl issue <domain> [email]")
+			}
+			email := ""
+			if len(os.Args) > 4 {
+				email = os.Args[4]
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 			defer cancel()
-			if err := panelssl.NewServiceFromConfig(cfg).IssueLetsEncrypt(ctx, os.Args[3], os.Args[4]); err != nil {
+			if err := panelssl.NewServiceFromConfig(cfg).IssueLetsEncrypt(ctx, os.Args[3], email); err != nil {
 				log.Fatalf("panel-ssl: %v", err)
 			}
 			log.Printf("panel certificate installed for %s", os.Args[3])
@@ -193,6 +202,8 @@ func main() {
 		utils.Success(c, 200, "ok", gin.H{"version": AppVersion})
 	})
 
+	selfupdate.NewHandler(cfg, AppVersion).RegisterRoutes(api, sessionAuth, requireSuperadmin)
+
 	authHandler := auth.NewHandler(db, rdb, cfg)
 	authHandler.RegisterRoutes(api, sessionAuth)
 
@@ -215,9 +226,14 @@ func main() {
 	dashboard.Version = AppVersion
 	dashboardHandler := dashboard.NewHandler(context.Background(), db, cfg)
 	dashboardHandler.RegisterRoutes(api, guard)
+	updatesHandler := updates.NewHandler()
+	updatesHandler.Service().OnChange(dashboardHandler.RefreshUpdates)
+	updatesHandler.RegisterRoutes(api, guard)
 
 	firewallHandler := firewall.NewHandler(cfg)
 	firewallHandler.RegisterRoutes(api, guard)
+	fail2ban.NewHandler().RegisterRoutes(api, guard)
+	supervisor.NewHandler().RegisterRoutes(api, guard)
 
 	cronHandler := cronjobs.NewHandler(db, cfg)
 	cronHandler.RegisterRoutes(api, guard)
@@ -234,6 +250,7 @@ func main() {
 
 	websiteHandler := website.NewHandler(db, cfg)
 	websiteHandler.RegisterRoutes(api, guard)
+	weblogs.NewHandler(db, cfg).RegisterRoutes(api, guard)
 	panelssl.NewHandler(cfg).RegisterRoutes(api, guard)
 
 	terminalHandler := terminal.NewHandler(context.Background(), cfg.TerminalShell, cfg.TerminalIdleMinutes, cfg.TerminalMaxSessions, cfg.FrontendURL)

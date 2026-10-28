@@ -16,7 +16,6 @@ function PanelSsl() {
   const st = data?.data
 
   const [domain, setDomain] = useState('')
-  const [email, setEmail] = useState('')
   const [useCustom, setUseCustom] = useState(false)
   const [cert, setCert] = useState('')
   const [key, setKey] = useState('')
@@ -84,9 +83,8 @@ function PanelSsl() {
 
         {!useCustom ? (
           <>
-            <Input label="E-mail (Let's Encrypt notices)" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             <div className="flex items-center gap-3">
-              <Button onClick={() => issue.mutate({ domain, email })} disabled={issue.isPending || !domain || !email}>
+              <Button onClick={() => issue.mutate({ domain })} disabled={issue.isPending || !domain}>
                 {issue.isPending ? 'Requesting certificate…' : "Issue Let's Encrypt certificate"}
               </Button>
               <button type="button" className="text-sm text-text-secondary hover:underline" onClick={() => setUseCustom(true)}>

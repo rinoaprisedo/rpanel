@@ -173,6 +173,46 @@ func (h *Handler) IssueSSL(c *gin.Context) {
 	utils.Success(c, 200, "SSL enabled", w)
 }
 
+type sslStartReq struct {
+	Email      string `json:"email"`
+	ForceHTTPS *bool  `json:"force_https"`
+}
+
+// StartSSL godoc
+// @Summary		Start issuing a Let's Encrypt certificate in the background (poll /ssl/progress)
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/ssl/start [post]
+func (h *Handler) StartSSL(c *gin.Context) {
+	var req sslStartReq
+	_ = c.ShouldBindJSON(&req)
+	force := true
+	if req.ForceHTTPS != nil {
+		force = *req.ForceHTTPS
+	}
+	p, err := h.svc.StartSSL(c.Param("uuid"), req.Email, force, utils.CurrentUserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	activity_logs.Audit(c, activity_logs.ActionUpdate, module, c.Param("uuid"), gin.H{"domain": p.Domain, "ssl": "requested"})
+	utils.Success(c, 202, "certificate request started", p)
+}
+
+// SSLProgress godoc
+// @Summary		Progress of the latest certificate request of a site
+// @Tags			websites
+// @Security		SessionCookie
+// @Router			/websites/{uuid}/ssl/progress [get]
+func (h *Handler) SSLProgress(c *gin.Context) {
+	p := h.svc.SSLProgress(c.Param("uuid"))
+	if p == nil {
+		utils.Error(c, 404, "no certificate request for this site")
+		return
+	}
+	utils.Success(c, 200, "ok", p)
+}
+
 // Logs godoc
 // @Summary		Tail the access or error log of a site
 // @Tags			websites

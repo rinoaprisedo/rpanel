@@ -8,7 +8,7 @@
 #                           A record must already point at this server; a Let's Encrypt certificate is
 #                           obtained automatically and access by IP is refused. When not set the installer
 #                           asks for it. On an upgrade it migrates an old IP-based install.
-#   CERTBOT_EMAIL=<email>   e-mail for Let's Encrypt expiry notices (asked when missing)
+#   CERTBOT_EMAIL=<email>   optional e-mail for the Let's Encrypt account (not needed; never asked)
 #   SKIP_DNS_CHECK=1        do not require the domain to resolve to this server (NAT, Cloudflare proxy, ...)
 #   PANEL_PORT=<port>       public HTTPS port of the panel (default: random 20000-59999)
 #   ADMIN_EMAIL=<email>     initial administrator (default: admin@rpanel.local)
@@ -102,10 +102,12 @@ require_domain() {
     ask "Panel domain (e.g. panel.example.com, its A record must point at this server): " PANEL_DOMAIN
     PANEL_DOMAIN="$(printf '%s' "$PANEL_DOMAIN" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
   fi
-  [ -n "$PANEL_DOMAIN" ] || die "RPanel requires a domain. Point an A record (e.g. panel.example.com) at this server, then run again with PANEL_DOMAIN=panel.example.com CERTBOT_EMAIL=you@example.com"
+  [ -n "$PANEL_DOMAIN" ] || die "RPanel requires a domain. Point an A record (e.g. panel.example.com) at this server, then run again with PANEL_DOMAIN=panel.example.com"
   printf '%s' "$PANEL_DOMAIN" | grep -Eq "$DOMAIN_RE" || die "invalid domain: $PANEL_DOMAIN (use a host name such as panel.example.com, not an IP address)"
-  if [ -z "${CERTBOT_EMAIL:-}" ]; then ask "E-mail for Let's Encrypt notices: " CERTBOT_EMAIL; fi
-  printf '%s' "${CERTBOT_EMAIL:-}" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' || die "a valid CERTBOT_EMAIL is required (Let's Encrypt expiry notices)"
+  CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
+  if [ -n "$CERTBOT_EMAIL" ]; then
+    printf '%s' "$CERTBOT_EMAIL" | grep -Eq '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' || die "CERTBOT_EMAIL is not a valid e-mail address (leave it out; Let's Encrypt does not need one)"
+  fi
 
   if [ "${SKIP_DNS_CHECK:-0}" != "1" ]; then
     resolved="$(getent ahostsv4 "$PANEL_DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')"
@@ -119,7 +121,7 @@ require_domain() {
   fi
 }
 
-issue_panel_cert() { # issue_panel_cert <domain> <email>
+issue_panel_cert() { # issue_panel_cert <domain> [email]
   log "Requesting a Let's Encrypt certificate for $1"
   ( cd "$INSTALL_DIR" && ./rpanel panel-ssl issue "$1" "$2" )
 }
@@ -217,11 +219,10 @@ if [ -f "$INSTALL_DIR/.env" ]; then
   rm -f "$INSTALL_DIR/rpanel.prev"; rm -rf "$INSTALL_DIR/web.prev"
   PANEL_DOMAIN="$(printf '%s' "${PANEL_DOMAIN:-}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
   if [ -n "$PANEL_DOMAIN" ] && [ "$(panel_domain_in_use)" != "$PANEL_DOMAIN" ] && [ -f "$INSTALL_DIR/ssl/panel-tls.conf" ]; then
-    [ -n "${CERTBOT_EMAIL:-}" ] || ask "E-mail for Let's Encrypt notices: " CERTBOT_EMAIL
     if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then ufw allow 80/tcp >/dev/null; fi
     issue_panel_cert "$PANEL_DOMAIN" "${CERTBOT_EMAIL:-}" || warn "could not set the panel domain; finish it in the panel: Settings > Panel SSL"
   elif [ -z "$(panel_domain_in_use)" ]; then
-    warn "the panel has no domain yet (self-signed certificate). Open the panel > Settings > Panel SSL to set one, or re-run with PANEL_DOMAIN=<domain> CERTBOT_EMAIL=<email>."
+    warn "the panel has no domain yet (self-signed certificate). Open the panel > Settings > Panel SSL to set one, or re-run with PANEL_DOMAIN=<domain>."
   fi
   log "Upgrade finished"
   exit 0
@@ -301,7 +302,7 @@ SESSION_MAX_CONCURRENT=3
 SECRET_KEY=$SECRET_KEY
 TRUSTED_PROXIES=127.0.0.1,::1
 PANEL_ALLOWED_IPS=$ALLOWED_IPS
-CERTBOT_EMAIL=$CERTBOT_EMAIL
+CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
 
 # Panel SSL (Settings > Panel SSL)
 PANEL_TLS_CONF=$INSTALL_DIR/ssl/panel-tls.conf

@@ -23,6 +23,8 @@ func (a *minuteAcc) add(p Point) {
 	a.sum.NetTxBps += p.NetTxBps
 	a.sum.Load1 += p.Load1
 	a.sum.Disk += p.Disk
+	a.sum.DiskRead += p.DiskRead
+	a.sum.DiskWrite += p.DiskWrite
 }
 
 func (a *minuteAcc) avg() Point {
@@ -30,6 +32,7 @@ func (a *minuteAcc) avg() Point {
 	return Point{
 		Time: a.minute * 60, CPU: a.sum.CPU / n, MemPercent: a.sum.MemPercent / n,
 		NetRxBps: a.sum.NetRxBps / n, NetTxBps: a.sum.NetTxBps / n, Load1: a.sum.Load1 / n, Disk: a.sum.Disk / n,
+		DiskRead: a.sum.DiskRead / n, DiskWrite: a.sum.DiskWrite / n,
 	}
 }
 
@@ -102,6 +105,8 @@ func downsample(src []Point, since, bucket int64) []Point {
 		g.sum.NetTxBps += p.NetTxBps
 		g.sum.Load1 += p.Load1
 		g.sum.Disk += p.Disk
+		g.sum.DiskRead += p.DiskRead
+		g.sum.DiskWrite += p.DiskWrite
 	}
 	keys := make([]int64, 0, len(groups))
 	for k := range groups {
@@ -114,6 +119,7 @@ func downsample(src []Point, since, bucket int64) []Point {
 		out = append(out, Point{
 			Time: k, CPU: g.sum.CPU / n, MemPercent: g.sum.MemPercent / n, NetRxBps: g.sum.NetRxBps / n,
 			NetTxBps: g.sum.NetTxBps / n, Load1: g.sum.Load1 / n, Disk: g.sum.Disk / n,
+			DiskRead: g.sum.DiskRead / n, DiskWrite: g.sum.DiskWrite / n,
 		})
 	}
 	return out

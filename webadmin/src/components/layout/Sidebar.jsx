@@ -8,6 +8,8 @@ import useSidebarStore from '../../store/sidebarStore'
 import useSettingsStore from '../../store/settingsStore'
 import useAuthStore from '../../store/authStore'
 import usePermission from '../../hooks/usePermission'
+import { getInstalled as getFail2banInstalled } from '../../api/fail2ban'
+import { getInstalled as getSupervisorInstalled } from '../../api/supervisor'
 
 function iconFor(name) {
   return Icons[name] || LayoutGrid
@@ -24,6 +26,21 @@ function Sidebar() {
   const logo = useSettingsStore((s) => s.logo)
   const isSuperadmin = useAuthStore((s) => !!s.user?.is_superadmin)
   const { canView } = usePermission()
+
+  // Menus that only make sense once an App Store app is installed (hidden until then).
+  const f2bAllowed = canView('fail2ban')
+  const { data: f2b } = useQuery({
+    queryKey: ['fail2ban', 'installed'], queryFn: getFail2banInstalled, enabled: f2bAllowed, staleTime: 30 * 1000, refetchInterval: 60 * 1000, retry: false,
+  })
+  const supAllowed = canView('supervisor')
+  const { data: sup } = useQuery({
+    queryKey: ['supervisor', 'installed'], queryFn: getSupervisorInstalled, enabled: supAllowed, staleTime: 30 * 1000, refetchInterval: 60 * 1000, retry: false,
+  })
+  const needsApp = (menu) => {
+    if (menu.path === 'fail2ban') return !!f2b?.data?.installed
+    if (menu.path === 'supervisor') return !!sup?.data?.installed
+    return true
+  }
 
   const { data } = useQuery({
     queryKey: ['menus', 'tree'],
@@ -54,7 +71,7 @@ function Sidebar() {
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-3">
           {sections.map((section) => {
-            const visibleMenus = (section.menus || []).filter((menu) => canView(menu.path) || canView(menu.name))
+            const visibleMenus = (section.menus || []).filter((menu) => (canView(menu.path) || canView(menu.name)) && needsApp(menu))
             const showSwagger = section.name === 'System' && isSuperadmin
             if (visibleMenus.length === 0 && !showSwagger) return null
 

@@ -320,11 +320,12 @@ func (s *Service) activate(ctx context.Context, mode, domain, cert, key string) 
 	return nil
 }
 
-// resolves checks that domain has DNS records at all; it returns a hint when none point at this machine.
-func (s *Service) resolves(domain string) (hint string, err error) {
-	ips, lerr := s.lookupIP(domain)
+// CheckDNS reports whether domain resolves. It returns a hint (not an error) when the records do not
+// point at an address of this machine, since NAT and CDNs make that check advisory only.
+func CheckDNS(lookup func(string) ([]string, error), domain string) (ips []string, hint string, err error) {
+	ips, lerr := lookup(domain)
 	if lerr != nil || len(ips) == 0 {
-		return "", fmt.Errorf("%w: %s does not resolve yet; create an A record pointing at this server's public IP and try again", ErrBadInput, domain)
+		return nil, "", fmt.Errorf("%w: %s does not resolve yet; create an A record pointing at this server's public IP and try again", ErrBadInput, domain)
 	}
 	local := map[string]bool{}
 	if addrs, e := net.InterfaceAddrs(); e == nil {
@@ -336,10 +337,28 @@ func (s *Service) resolves(domain string) (hint string, err error) {
 	}
 	for _, ip := range ips {
 		if local[ip] {
-			return "", nil
+			return ips, "", nil
 		}
 	}
-	return fmt.Sprintf("%s resolves to %s, which is not an address of this server; check the DNS record", domain, strings.Join(ips, ", ")), nil
+	return ips, fmt.Sprintf("%s resolves to %s, which is not an address of this server; check the DNS record", domain, strings.Join(ips, ", ")), nil
+}
+
+// CertbotRegistration returns the certbot arguments that identify the ACME account: the e-mail when given
+// (validated), otherwise an anonymous registration. Let's Encrypt does not require an e-mail address.
+func CertbotRegistration(email string) ([]string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return []string{"--register-unsafely-without-email"}, nil
+	}
+	if !emailRe.MatchString(email) {
+		return nil, fmt.Errorf("%w: %q is not a valid e-mail address (leave it empty to skip)", ErrBadInput, email)
+	}
+	return []string{"-m", email}, nil
+}
+
+func (s *Service) resolves(domain string) (hint string, err error) {
+	_, hint, err = CheckDNS(s.lookupIP, domain)
+	return hint, err
 }
 
 // IssueLetsEncrypt validates the domain over port 80, obtains a certificate with certbot and switches the panel to it.
@@ -351,8 +370,9 @@ func (s *Service) IssueLetsEncrypt(ctx context.Context, domain, email string) er
 	if err != nil {
 		return err
 	}
-	if !emailRe.MatchString(email) {
-		return fmt.Errorf("%w: a valid email is required for Let's Encrypt", ErrBadInput)
+	reg, err := CertbotRegistration(email)
+	if err != nil {
+		return err
 	}
 	hint, err := s.resolves(d)
 	if err != nil {
@@ -362,8 +382,8 @@ func (s *Service) IssueLetsEncrypt(ctx context.Context, domain, email string) er
 	if err != nil {
 		return err
 	}
-	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", "certonly", "--webroot", "-w", s.cfg.AcmeRoot,
-		"-d", d, "--non-interactive", "--agree-tos", "-m", email, "--keep-until-expiring")
+	args := append([]string{"certonly", "--webroot", "-w", s.cfg.AcmeRoot, "-d", d, "--non-interactive", "--agree-tos", "--keep-until-expiring"}, reg...)
+	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", args...)
 	if err != nil {
 		undo()
 		msg := "certbot failed: " + lastLines(res.Stdout+"\n"+res.Stderr, 6)

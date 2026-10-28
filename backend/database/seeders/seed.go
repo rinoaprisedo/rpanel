@@ -90,6 +90,7 @@ type menuDef struct {
 
 func seedMenus(db *gorm.DB) []uint64 {
 	removeMergedMenus(db)
+	splitDashboardMenu(db)
 	sections := []struct {
 		Section menus.MenuSection
 		Menus   []menuDef
@@ -97,13 +98,15 @@ func seedMenus(db *gorm.DB) []uint64 {
 		{
 			Section: menus.MenuSection{Name: "Dashboard", Icon: "LayoutDashboard", Order: 1},
 			Menus: []menuDef{
-				{Name: "Dashboard", Icon: "LayoutDashboard", Path: "/"},
+				{Name: "Monitor Server", Icon: "Activity", Path: "monitor-server"},
+				{Name: "Monitor Traffic", Icon: "ChartNoAxesCombined", Path: "monitor-traffic"},
 			},
 		},
 		{
 			Section: menus.MenuSection{Name: "Server", Icon: "Server", Order: 2},
 			Menus: []menuDef{
 				{Name: "Websites", Icon: "Globe", Path: "websites"},
+				{Name: "Logs", Icon: "ScrollText", Path: "logs"},
 				{Name: "File Manager", Icon: "FolderOpen", Path: "file-manager"},
 				{Name: "Terminal", Icon: "Terminal", Path: "terminal"},
 				{Name: "Databases", Icon: "Database", Path: "databases"},
@@ -111,6 +114,9 @@ func seedMenus(db *gorm.DB) []uint64 {
 				{Name: "Cron", Icon: "Clock", Path: "cron"},
 				{Name: "Firewall", Icon: "ShieldCheck", Path: "firewall"},
 				{Name: "App Store", Icon: "Store", Path: "app-store"},
+				{Name: "Fail2ban", Icon: "ShieldAlert", Path: "fail2ban"},
+				{Name: "Supervisor", Icon: "Layers", Path: "supervisor"},
+				{Name: "Updates", Icon: "RefreshCw", Path: "updates"},
 			},
 		},
 		{
@@ -200,4 +206,32 @@ func removeMergedMenus(db *gorm.DB) {
 	}
 	db.Unscoped().Where("menu_id = ?", old.ID).Delete(&permissions.Permission{})
 	db.Delete(&old)
+}
+
+// splitDashboardMenu turns the old "Dashboard" menu (path "/") into "Monitor Server" in place, so every role keeps
+// its permission, and gives the new "Monitor Traffic" menu the same permissions as the old one.
+func splitDashboardMenu(db *gorm.DB) {
+	var old menus.Menu
+	if db.Where("path = ?", "/").First(&old).Error != nil {
+		return
+	}
+	var exists int64
+	db.Model(&menus.Menu{}).Where("path = ?", "monitor-server").Count(&exists)
+	if exists > 0 {
+		return
+	}
+	db.Model(&old).Updates(map[string]any{"name": "Monitor Server", "icon": "Activity", "path": "monitor-server"})
+	var traffic menus.Menu
+	db.Where("path = ?", "monitor-traffic").Attrs(menus.Menu{
+		MenuSectionID: old.MenuSectionID, Name: "Monitor Traffic", Icon: "ChartNoAxesCombined", Path: "monitor-traffic", Order: old.Order + 1, IsActive: true,
+	}).FirstOrCreate(&traffic)
+	var perms []permissions.Permission
+	db.Where("menu_id = ?", old.ID).Find(&perms)
+	for _, p := range perms {
+		var n int64
+		db.Model(&permissions.Permission{}).Where("role_id = ? AND menu_id = ?", p.RoleID, traffic.ID).Count(&n)
+		if n == 0 {
+			db.Create(&permissions.Permission{RoleID: p.RoleID, MenuID: traffic.ID, CanView: p.CanView, CanCreate: p.CanCreate, CanEdit: p.CanEdit, CanDelete: p.CanDelete})
+		}
+	}
 }

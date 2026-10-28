@@ -11,13 +11,14 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Skeleton from '../../components/ui/Skeleton'
 import FolderPicker from './FolderPicker'
 import SiteManager from './SiteManager'
+import SslProgress from './SslProgress'
 import SiteCard, { TYPES } from './SiteCard'
 import { cn } from '../../utils/cn'
 import { getTraffic, getInsights } from '../../api/dashboard'
 import * as api from '../../api/websites'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
-const emptyForm = { domain: '', type: 'static', root_dir: '', php_version: '', proxy_target: '' }
+const emptyForm = { domain: '', type: 'static', root_dir: '', php_version: '', proxy_target: '', ssl: true }
 
 function Websites() {
   const qc = useQueryClient()
@@ -47,7 +48,25 @@ function Websites() {
     onSuccess: () => { toast.success(ok); refresh(); after?.() },
     onError: (e) => toast.error(errMsg(e)),
   })
-  const create = useMutation(act((d) => api.createWebsite(d), 'Website created', () => setForm(null)))
+  const [sslJob, setSslJob] = useState(null) // { uuid, domain } while the progress dialog is open
+  const startSsl = async (site) => {
+    try {
+      await api.startSSL(site.uuid, { force_https: true })
+      setSslJob({ uuid: site.uuid, domain: site.domain })
+    } catch (e) {
+      toast.error(errMsg(e), { duration: 8000 })
+    }
+  }
+  const create = useMutation({
+    mutationFn: ({ body }) => api.createWebsite(body),
+    onSuccess: (res, { ssl }) => {
+      toast.success('Website created')
+      refresh()
+      setForm(null)
+      if (ssl && res?.data?.uuid) startSsl(res.data)
+    },
+    onError: (e) => toast.error(errMsg(e)),
+  })
   const toggle = useMutation(act((s) => (s.status === 'running' ? api.stopWebsite(s.uuid) : api.startWebsite(s.uuid)), 'Updated'))
   const remove = useMutation(act((s) => api.deleteWebsite(s.uuid, deleteFiles), 'Website deleted', () => setDel(null)))
   const install = useMutation({
@@ -71,7 +90,7 @@ function Websites() {
     const body = { domain: form.domain, type: form.type, root_dir: form.root_dir }
     if (form.type === 'php') body.php_version = form.php_version
     if (form.type === 'proxy') body.proxy_target = form.proxy_target
-    create.mutate(body)
+    create.mutate({ body, ssl: form.ssl && !!env?.certbot })
   }
 
   const counts = {
@@ -103,7 +122,6 @@ function Websites() {
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
             <Chip ok={env?.nginx}>Nginx {env?.nginx ? (env.nginx_version || '').replace('nginx/', '') : 'missing'}</Chip>
             <Chip ok={env?.certbot}>Certbot {env?.certbot ? '' : 'missing'}</Chip>
-            <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">PHP {env?.php_versions?.length ? env.php_versions.join(', ') : <button onClick={() => navigate('/app-store')} className="text-primary hover:underline">not installed — App Store</button>}</span>
             {env && !env.nginx && <button disabled={install.isPending} onClick={() => install.mutate({ component: 'nginx' })} className="text-xs font-medium text-primary hover:underline">Install Nginx</button>}
             {env && !env.certbot && <button disabled={install.isPending} onClick={() => install.mutate({ component: 'certbot' })} className="text-xs font-medium text-primary hover:underline">Install Certbot</button>}
           </div>
@@ -197,6 +215,13 @@ function Websites() {
                 : <p className="rounded-md bg-warning-bg p-3 text-sm text-warning">No PHP is installed yet. Install a version from the App Store first.</p>
             )}
             {form.type === 'proxy' && <Input label="Proxy target" placeholder="http://127.0.0.1:3000" value={form.proxy_target} onChange={set('proxy_target')} />}
+            <label className={cn('flex items-start gap-3 rounded-lg border p-3', env?.certbot ? 'cursor-pointer border-surface-border' : 'border-surface-border opacity-60')}>
+              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={form.ssl && !!env?.certbot} disabled={!env?.certbot} onChange={(e) => setForm({ ...form, ssl: e.target.checked })} />
+              <span>
+                <span className="flex items-center gap-1.5 text-sm font-medium text-text-primary"><Lock size={13} />Enable free HTTPS (Let&apos;s Encrypt)</span>
+                <span className="block text-xs text-text-secondary">{env?.certbot ? 'Requested right after the site is created. The domain must already point at this server and port 80 must be open.' : 'Certbot is not installed. Install it from the App Store to enable this.'}</span>
+              </span>
+            </label>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setForm(null)}>Cancel</Button>
               <Button type="submit" disabled={create.isPending || !form.domain || (form.type === 'php' && !form.php_version)}>{create.isPending ? 'Creating…' : 'Create'}</Button>
@@ -204,6 +229,13 @@ function Websites() {
           </form>
         )}
       </Modal>
+
+      <SslProgress
+        target={sslJob}
+        onClose={() => { setSslJob(null); refresh() }}
+        onFinished={() => refresh()}
+        onRetry={() => { const t = sslJob; setSslJob(null); if (t) startSsl({ uuid: t.uuid, domain: t.domain }) }}
+      />
 
       <FolderPicker open={picking} initial={form?.root_dir} onClose={() => setPicking(false)} onSelect={(p) => { setForm((f) => ({ ...f, root_dir: p })); setPicking(false) }} />
 

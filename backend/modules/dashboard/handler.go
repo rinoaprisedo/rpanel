@@ -33,6 +33,11 @@ func NewHandler(ctx context.Context, db *gorm.DB, cfg *config.Config) *Handler {
 	return h
 }
 
+// RefreshUpdates recounts pending package updates in the background (called after an update job).
+func (h *Handler) RefreshUpdates() {
+	go h.probes.refreshUpdates(context.Background())
+}
+
 // Overview godoc
 // @Summary		Current host metrics (CPU, memory, disk, network, load)
 // @Tags			dashboard

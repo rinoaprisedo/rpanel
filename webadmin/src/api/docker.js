@@ -19,3 +19,5 @@ export const projectDown = (name) => client.post(`/docker/compose/${name}/down`,
 export const projectPS = (name) => client.get(`/docker/compose/${name}/ps`).then((r) => r.data)
 export const projectLogs = (name, lines = 300) => client.get(`/docker/compose/${name}/logs`, { params: { lines } }).then((r) => r.data)
 export const deleteProject = (name) => client.delete(`/docker/compose/${name}`).then((r) => r.data)
+export const getDockerOverview = () => client.get('/docker/overview').then((r) => r.data)
+export const getDockerStats = () => client.get('/docker/stats', { timeout: 45000 }).then((r) => r.data)

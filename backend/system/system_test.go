@@ -87,3 +87,14 @@ func TestResolvePath(t *testing.T) {
 		t.Error("relative must be rejected even when unrestricted")
 	}
 }
+
+func TestRunLinesStreamsOutput(t *testing.T) {
+	var got []string
+	res, err := RunLines(context.Background(), Exec{}, 0, nil, func(l string) { got = append(got, l) }, "id", "-u")
+	if err != nil || len(got) != 1 || strings.TrimSpace(res.Stdout) != got[0] {
+		t.Fatalf("lines=%v res=%+v err=%v", got, res, err)
+	}
+	if _, err := RunLines(context.Background(), Exec{}, 0, nil, func(string) {}, "rm", "-rf", "/"); !errors.Is(err, ErrNotAllowed) {
+		t.Errorf("allow-list must apply to streaming runs, got %v", err)
+	}
+}

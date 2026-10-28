@@ -4,7 +4,9 @@ import AuthLayout from '../components/layout/AuthLayout'
 import ProtectedRoute from './ProtectedRoute'
 
 import Login from '../pages/auth/Login'
-import Dashboard from '../pages/dashboard/Dashboard'
+import Home from '../pages/monitor/Home'
+import MonitorServer from '../pages/monitor/MonitorServer'
+import MonitorTraffic from '../pages/monitor/MonitorTraffic'
 import Users from '../pages/users/Users'
 import Menus from '../pages/menus/Menus'
 import Roles from '../pages/roles/Roles'
@@ -19,6 +21,10 @@ import Databases from '../pages/databases/Databases'
 import Docker from '../pages/docker/Docker'
 import Cron from '../pages/cron/Cron'
 import Firewall from '../pages/firewall/Firewall'
+import Fail2ban from '../pages/fail2ban/Fail2ban'
+import Updates from '../pages/updates/Updates'
+import Logs from '../pages/logs/Logs'
+import Supervisor from '../pages/supervisor/Supervisor'
 import Security from '../pages/security/Security'
 import Forbidden from '../pages/Forbidden'
 import NotFound from '../pages/NotFound'
@@ -42,7 +48,23 @@ function AppRouter() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Home />} />
+        <Route
+          path="/monitor-server"
+          element={
+            <ProtectedRoute menuKey="monitor-server">
+              <MonitorServer />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/monitor-traffic"
+          element={
+            <ProtectedRoute menuKey="monitor-traffic">
+              <MonitorTraffic />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/users"
           element={
@@ -112,6 +134,38 @@ function AppRouter() {
           element={
             <ProtectedRoute menuKey="websites">
               <Websites />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/supervisor"
+          element={
+            <ProtectedRoute menuKey="supervisor">
+              <Supervisor />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/logs"
+          element={
+            <ProtectedRoute menuKey="logs">
+              <Logs />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/updates"
+          element={
+            <ProtectedRoute menuKey="updates">
+              <Updates />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/fail2ban"
+          element={
+            <ProtectedRoute menuKey="fail2ban">
+              <Fail2ban />
             </ProtectedRoute>
           }
         />

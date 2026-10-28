@@ -346,3 +346,37 @@ func (h *Handler) DeleteProject(c *gin.Context) {
 	}
 	utils.Success(c, 200, "project deleted", nil)
 }
+
+// Overview godoc
+// @Summary		Resource overview: containers, compose projects, images, networks, volumes, registries
+// @Tags			docker
+// @Security		SessionCookie
+// @Router			/docker/overview [get]
+func (h *Handler) Overview(c *gin.Context) {
+	var names []string
+	if ps, err := h.c.List(); err == nil {
+		for _, p := range ps {
+			names = append(names, p.Name)
+		}
+	}
+	ov, err := h.d.Overview(c.Request.Context(), names, defaultDockerConfig())
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "ok", ov)
+}
+
+// Stats godoc
+// @Summary		One CPU/memory sample of every running container
+// @Tags			docker
+// @Security		SessionCookie
+// @Router			/docker/stats [get]
+func (h *Handler) Stats(c *gin.Context) {
+	st, err := h.d.Stats(c.Request.Context())
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "ok", st)
+}

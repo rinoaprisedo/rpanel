@@ -17,12 +17,14 @@ import (
 
 // LogLine is one parsed nginx "combined" access-log entry.
 type LogLine struct {
-	Time   time.Time
-	IP     string
-	Path   string // without the query string
-	Status int
-	Bytes  int64
-	UA     string
+	Time    time.Time
+	IP      string
+	Method  string
+	Path    string // without the query string
+	Status  int
+	Bytes   int64
+	Referer string
+	UA      string
 }
 
 const nginxTime = "02/Jan/2006:15:04:05 -0700"
@@ -55,6 +57,7 @@ func parseLogLine(line string) (LogLine, bool) {
 	}
 	req := rest[q1+1 : q1+1+q2]
 	if f := strings.Fields(req); len(f) >= 2 {
+		l.Method = f[0]
 		l.Path = f[1]
 		if i := strings.IndexByte(l.Path, '?'); i >= 0 {
 			l.Path = l.Path[:i]
@@ -72,6 +75,7 @@ func parseLogLine(line string) (LogLine, bool) {
 	if len(parts) == 3 {
 		if i := strings.LastIndex(parts[2], `" "`); i >= 0 {
 			l.UA = strings.TrimSuffix(parts[2][i+3:], `"`)
+			l.Referer = strings.TrimPrefix(parts[2][:i], `"`)
 		}
 	}
 	return l, true
@@ -103,6 +107,7 @@ func isAsset(path string) bool { return assetExt[strings.ToLower(filepath.Ext(pa
 
 type Totals struct {
 	Requests  int   `json:"requests"`
+	PageViews int   `json:"page_views"` // requests for pages, without images, scripts and fonts
 	Visitors  int   `json:"visitors"`
 	Bytes     int64 `json:"bytes"`
 	OK        int   `json:"ok"` // 1xx-3xx
@@ -116,6 +121,27 @@ type Bucket struct {
 	OK        int   `json:"ok"`
 	ClientErr int   `json:"client_err"`
 	ServerErr int   `json:"server_err"`
+	Bytes     int64 `json:"bytes"`
+	Visitors  int   `json:"visitors"`
+}
+
+// Recent is one of the latest requests, for the live feed.
+type Recent struct {
+	T      int64  `json:"t"`
+	Site   string `json:"site"`
+	IP     string `json:"ip"`
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Status int    `json:"status"`
+	Bytes  int64  `json:"bytes"`
+	Client string `json:"client"` // "Chrome · Windows", a bot name, ...
+}
+
+// Live describes the last few minutes.
+type Live struct {
+	Last5m   int     `json:"last_5m"`
+	PerMin   float64 `json:"per_min"`
+	Visitors int     `json:"visitors"` // distinct clients in the last 5 minutes
 }
 
 type SiteTraffic struct {
@@ -143,6 +169,22 @@ type Traffic struct {
 	TopPaths  []Counted     `json:"top_paths"`
 	TopIPs    []Counted     `json:"top_ips"`
 	Statuses  []Counted     `json:"statuses"`
+
+	Methods    []Counted `json:"methods"`
+	Referrers  []Counted `json:"referrers"`
+	Browsers   []Counted `json:"browsers"`
+	Systems    []Counted `json:"systems"`
+	Devices    []Counted `json:"devices"`
+	Bots       []Counted `json:"bots"`        // recognised crawlers and scripts
+	NotFound   []Counted `json:"not_found"`   // most requested missing URLs
+	ErrorPaths []Counted `json:"error_paths"` // URLs behind most 5xx answers
+	Hours      []int     `json:"hours"`       // requests by hour of day (server time)
+	Weekdays   []int     `json:"weekdays"`    // requests by weekday, Sunday first
+	Classes    []Counted `json:"classes"`     // 2xx / 3xx / 4xx / 5xx
+	Latest     []Recent  `json:"latest"`
+	Live       Live      `json:"live"`
+	Domains    []string  `json:"domains"` // every managed site, for the filter
+	Timezone   string    `json:"timezone"`
 }
 
 // ---- windows ----
@@ -279,6 +321,23 @@ type aggregator struct {
 	statuses map[int]int
 	allIPs   map[string]struct{}
 	prevIPs  map[string]struct{}
+
+	bucketIPs  map[int64]map[string]struct{}
+	methods    map[string]int
+	referrers  map[string]int
+	browsers   map[string]int
+	systems    map[string]int
+	devices    map[string]int
+	bots       map[string]int
+	notFound   map[string]int
+	errorPaths map[string]int
+	hours      [24]int
+	weekdays   [7]int
+	classes    [4]int // 2xx 3xx 4xx 5xx (1xx counts as 2xx)
+	recent     []Recent
+	live5      int
+	live5IPs   map[string]struct{}
+	clientMemo map[string]Client
 }
 
 func newAggregator(spec trafficSpec, now time.Time) *aggregator {
@@ -287,6 +346,9 @@ func newAggregator(spec trafficSpec, now time.Time) *aggregator {
 		spec: spec, since: since, prevFrom: prev, until: now,
 		buckets: map[int64]*Bucket{}, paths: map[string]*Counted{}, ips: map[string]int{},
 		statuses: map[int]int{}, allIPs: map[string]struct{}{}, prevIPs: map[string]struct{}{},
+		bucketIPs: map[int64]map[string]struct{}{}, methods: map[string]int{}, referrers: map[string]int{}, browsers: map[string]int{},
+		systems: map[string]int{}, devices: map[string]int{}, bots: map[string]int{}, notFound: map[string]int{}, errorPaths: map[string]int{},
+		live5IPs: map[string]struct{}{}, clientMemo: map[string]Client{},
 	}
 	for t := spec.bucketStart(since); t <= now.Unix(); {
 		a.buckets[t] = &Bucket{T: t}
@@ -323,7 +385,8 @@ func (a *aggregator) add(s *siteAgg, l LogLine) {
 		if len(a.allIPs) < maxTrackedKeys*5 {
 			a.allIPs[l.IP] = struct{}{}
 		}
-		if b := a.buckets[a.spec.bucketStart(l.Time)]; b != nil {
+		bs := a.spec.bucketStart(l.Time)
+		if b := a.buckets[bs]; b != nil {
 			switch {
 			case l.Status >= 500:
 				b.ServerErr++
@@ -332,7 +395,17 @@ func (a *aggregator) add(s *siteAgg, l LogLine) {
 			default:
 				b.OK++
 			}
+			b.Bytes += l.Bytes
+			set := a.bucketIPs[bs]
+			if set == nil {
+				set = map[string]struct{}{}
+				a.bucketIPs[bs] = set
+			}
+			if len(set) < maxTrackedKeys {
+				set[l.IP] = struct{}{}
+			}
 		}
+		a.detail(s, l)
 		a.statuses[l.Status]++
 		if len(a.ips) < maxTrackedKeys || a.ips[l.IP] > 0 {
 			a.ips[l.IP]++
@@ -359,6 +432,97 @@ func (a *aggregator) add(s *siteAgg, l LogLine) {
 	}
 }
 
+const recentWindow = 10 * time.Minute
+
+func bump(m map[string]int, key string) {
+	if _, ok := m[key]; ok || len(m) < maxTrackedKeys {
+		m[key]++
+	}
+}
+
+// client classifies a User-Agent once per distinct string.
+func (a *aggregator) client(ua string) Client {
+	if c, ok := a.clientMemo[ua]; ok {
+		return c
+	}
+	c := classifyUA(ua)
+	if len(a.clientMemo) < 5000 {
+		a.clientMemo[ua] = c
+	}
+	return c
+}
+
+// detail records the dimensions beyond totals for a request inside the current period.
+func (a *aggregator) detail(s *siteAgg, l LogLine) {
+	asset := isAsset(l.Path)
+	if !asset && l.Path != "" {
+		s.cur.PageViews++
+	}
+	c := a.client(l.UA)
+	if l.Method != "" {
+		bump(a.methods, l.Method)
+	}
+	if c.Bot != "" {
+		bump(a.bots, c.Bot)
+	} else {
+		bump(a.browsers, c.Browser)
+		bump(a.systems, c.OS)
+	}
+	bump(a.devices, c.Device)
+	if h := refererHost(l.Referer); h != "" && h != s.domain && !strings.HasSuffix(h, "."+s.domain) {
+		bump(a.referrers, h)
+	}
+	lt := l.Time.In(time.Local)
+	a.hours[lt.Hour()]++
+	a.weekdays[lt.Weekday()]++
+	switch {
+	case l.Status >= 500:
+		a.classes[3]++
+		if l.Path != "" {
+			bump(a.errorPaths, l.Path)
+		}
+	case l.Status >= 400:
+		a.classes[2]++
+		if l.Status == 404 && !asset && l.Path != "" {
+			bump(a.notFound, l.Path)
+		}
+	case l.Status >= 300:
+		a.classes[1]++
+	default:
+		a.classes[0]++
+	}
+	if age := a.until.Sub(l.Time); age >= 0 && age <= recentWindow {
+		if len(a.recent) < 3000 {
+			who := c.Bot
+			if who == "" {
+				who = c.Browser + " · " + c.OS
+			}
+			a.recent = append(a.recent, Recent{T: l.Time.Unix(), Site: s.domain, IP: l.IP, Method: l.Method, Path: l.Path, Status: l.Status, Bytes: l.Bytes, Client: who})
+		}
+		if age <= 5*time.Minute {
+			a.live5++
+			a.live5IPs[l.IP] = struct{}{}
+		}
+	}
+}
+
+func topMap(m map[string]int, n int) []Counted {
+	out := make([]Counted, 0, len(m))
+	for k, v := range m {
+		out = append(out, Counted{Key: k, Count: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Key < out[j].Key
+	})
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
+}
+
 func topCounted(m map[string]*Counted, n int) []Counted {
 	out := make([]Counted, 0, len(m))
 	for _, c := range m {
@@ -381,7 +545,20 @@ func (a *aggregator) result(rng string, sites []*siteAgg, available, truncated b
 		Range: rng, Since: a.since.Unix(), Until: a.until.Unix(), BucketSec: a.spec.bucketSec(),
 		Available: available, Truncated: truncated, Buckets: []Bucket{}, Sites: []SiteTraffic{},
 		TopPaths: topCounted(a.paths, 8), TopIPs: []Counted{}, Statuses: []Counted{},
+		Methods: topMap(a.methods, 8), Referrers: topMap(a.referrers, 8), Browsers: topMap(a.browsers, 8), Systems: topMap(a.systems, 8),
+		Devices: topMap(a.devices, 4), Bots: topMap(a.bots, 8), NotFound: topMap(a.notFound, 8), ErrorPaths: topMap(a.errorPaths, 8),
+		Hours: append([]int(nil), a.hours[:]...), Weekdays: append([]int(nil), a.weekdays[:]...), Latest: []Recent{},
+		Live: Live{Last5m: a.live5, PerMin: float64(a.live5) / 5, Visitors: len(a.live5IPs)},
 	}
+	t.Timezone = a.until.In(time.Local).Format("MST -07:00")
+	for i, name := range []string{"2xx", "3xx", "4xx", "5xx"} {
+		t.Classes = append(t.Classes, Counted{Key: name, Count: a.classes[i]})
+	}
+	sort.SliceStable(a.recent, func(i, j int) bool { return a.recent[i].T > a.recent[j].T })
+	if len(a.recent) > 15 {
+		a.recent = a.recent[:15]
+	}
+	t.Latest = append(t.Latest, a.recent...)
 	for _, s := range sites {
 		st := SiteTraffic{Domain: s.domain, Totals: s.cur}
 		st.Visitors = len(s.curIPs)
@@ -405,7 +582,8 @@ func (a *aggregator) result(rng string, sites []*siteAgg, available, truncated b
 		}
 		return t.Sites[i].Domain < t.Sites[j].Domain
 	})
-	for _, b := range a.buckets {
+	for k, b := range a.buckets {
+		b.Visitors = len(a.bucketIPs[k])
 		t.Buckets = append(t.Buckets, *b)
 	}
 	sort.Slice(t.Buckets, func(i, j int) bool { return t.Buckets[i].T < t.Buckets[j].T })
@@ -440,6 +618,7 @@ func (a *aggregator) result(rng string, sites []*siteAgg, available, truncated b
 
 func addTotals(dst *Totals, s Totals) {
 	dst.Requests += s.Requests
+	dst.PageViews += s.PageViews
 	dst.Bytes += s.Bytes
 	dst.OK += s.OK
 	dst.ClientErr += s.ClientErr
@@ -514,6 +693,8 @@ func (a *Analyzer) Traffic(rng, site string) (*Traffic, error) {
 		}
 	}
 	res := agg.result(rng, sites, available, truncated)
+	res.Domains = append([]string{}, a.domains()...)
+	sort.Strings(res.Domains)
 	a.cache[key] = cachedTraffic{at: now, val: res}
 	return res, nil
 }

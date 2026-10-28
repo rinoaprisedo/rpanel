@@ -106,8 +106,8 @@ function AppCard({ app, onInstall, onRemove, onControl, onOpenDatabases, pending
               {app.has_service && !app.multi && !app.required && (
                 app.running ? (
                   <>
-                    <Button variant="ghost" className="h-8 w-8 px-0" title="Restart" disabled={pending} onClick={() => onControl(app, 'restart')}><RotateCw size={14} /></Button>
-                    <Button variant="ghost" className="h-8 w-8 px-0" title="Stop" disabled={pending} onClick={() => onControl(app, 'stop')}><Square size={14} /></Button>
+                    <Button variant="ghost" className="h-8 w-8 !px-0" title="Restart" disabled={pending} onClick={() => onControl(app, 'restart')}><RotateCw size={14} /></Button>
+                    <Button variant="ghost" className="h-8 w-8 !px-0" title="Stop" disabled={pending} onClick={() => onControl(app, 'stop')}><Square size={14} /></Button>
                   </>
                 ) : (
                   <Button variant="secondary" className="h-8 px-2.5 text-xs" disabled={pending} onClick={() => onControl(app, 'start')}><Play size={13} />Start</Button>
@@ -225,11 +225,15 @@ function AppStore() {
       const was = prev.current[a.id]
       if (was && (was === 'installing' || was === 'removing') && !busy(a)) {
         if (a.state === 'failed') toast.error(`${a.name}: ${a.error || 'failed'}`)
-        else toast.success(was === 'installing' ? `${a.name} installed` : `${a.name} uninstalled`)
+        else {
+          toast.success(was === 'installing' ? `${a.name} installed` : `${a.name} uninstalled`)
+          qc.invalidateQueries({ queryKey: ['fail2ban'] }) // shows/hides the Fail2ban and Supervisor sidebar entries
+          qc.invalidateQueries({ queryKey: ['supervisor'] })
+        }
       }
       prev.current[a.id] = a.state
     })
-  }, [apps])
+  }, [apps, qc])
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['app-store'] })
   const install = useMutation({

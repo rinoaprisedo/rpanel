@@ -9,6 +9,8 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g.GET("/status", guard(m, "view"), h.Status)
 	g.POST("/install", guard(m, "create"), h.Install)
 
+	g.GET("/overview", guard(m, "view"), h.Overview)
+	g.GET("/stats", guard(m, "view"), h.Stats)
 	g.GET("/containers", guard(m, "view"), h.ListContainers)
 	g.POST("/containers", guard(m, "create"), h.RunContainer)
 	g.GET("/containers/:id/logs", guard(m, "view"), h.ContainerLogs)

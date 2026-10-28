@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"rpanel/backend/modules/panelssl"
@@ -42,7 +44,17 @@ type Service struct {
 	ng  *Nginx
 	run system.Runner
 	cfg Settings
+
+	jobsMu sync.Mutex
+	jobs   map[string]*SSLJob
+	lookup func(string) ([]string, error) // DNS lookup; net.LookupHost when nil
+	// checkCertbot is false in tests, where a fake runner stands in for certbot.
+	skipCertbotCheck bool
 }
+
+func defaultLookup(h string) ([]string, error) { return net.LookupHost(h) }
+
+func (s *Service) certbotOptional() bool { return !s.skipCertbotCheck }
 
 func NewService(db *gorm.DB, ng *Nginx, run system.Runner, cfg Settings) *Service {
 	return &Service{db: db, ng: ng, run: run, cfg: cfg}
@@ -229,17 +241,14 @@ func (s *Service) IssueSSL(ctx context.Context, uuid, email string, actor *uint6
 	if w.Status != StatusRunning {
 		return nil, fmt.Errorf("%w: start the site first", ErrBadInput)
 	}
-	if email == "" {
-		email = s.cfg.CertbotEmail
-	}
-	if !emailRe.MatchString(email) {
-		return nil, fmt.Errorf("%w: a valid email is required for Let's Encrypt", ErrBadInput)
+	reg, err := s.registration(email)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(s.cfg.AcmeRoot, 0o755); err != nil {
 		return nil, err
 	}
-	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", "certonly", "--webroot", "-w", s.cfg.AcmeRoot,
-		"-d", w.Domain, "--non-interactive", "--agree-tos", "-m", email, "--keep-until-expiring")
+	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", s.certbotArgs(w.Domain, reg)...)
 	if err != nil {
 		return nil, fmt.Errorf("certbot failed: %s", lastLines(res.Stdout+"\n"+res.Stderr, 6))
 	}
@@ -253,6 +262,22 @@ func (s *Service) IssueSSL(ctx context.Context, uuid, email string, actor *uint6
 		return nil, err
 	}
 	return w, nil
+}
+
+// registration resolves the ACME account arguments: the given e-mail, else the server default, else anonymous.
+func (s *Service) registration(email string) ([]string, error) {
+	if strings.TrimSpace(email) == "" {
+		email = s.cfg.CertbotEmail
+	}
+	reg, err := panelssl.CertbotRegistration(email)
+	if err != nil {
+		return nil, fmt.Errorf("%w: that is not a valid e-mail address (leave it empty to skip)", ErrBadInput)
+	}
+	return reg, nil
+}
+
+func (s *Service) certbotArgs(domain string, reg []string) []string {
+	return append([]string{"certonly", "--webroot", "-w", s.cfg.AcmeRoot, "-d", domain, "--non-interactive", "--agree-tos", "--keep-until-expiring"}, reg...)
 }
 
 func lastLines(s string, n int) string {

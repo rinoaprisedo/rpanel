@@ -13,20 +13,11 @@ import CodeEditor from '../../components/ui/CodeEditor'
 import useAuthStore from '../../store/authStore'
 import { cn } from '../../utils/cn'
 import * as api from '../../api/websites'
+import SslProgress from './SslProgress'
+import Switch from '../../components/ui/Switch'
 
 const TABS = ['Config', 'SSL', 'Reverse proxy']
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
-
-function Switch({ checked, onChange, disabled, label }) {
-  return (
-    <button
-      type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)}
-      className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50', checked ? 'bg-primary' : 'bg-surface-border-hover')}
-    >
-      <span className={cn('absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all', checked ? 'left-[18px]' : 'left-0.5')} />
-    </button>
-  )
-}
 
 // ---------------------------------------------------------------- Config
 function ConfigTab({ site }) {
@@ -71,13 +62,18 @@ function ConfigTab({ site }) {
 function SSLTab({ site, onChanged }) {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['site-ssl', site.uuid], queryFn: () => api.getSiteSSL(site.uuid) })
-  const [email, setEmail] = useState('')
   const [confirmOff, setConfirmOff] = useState(false)
+  const [job, setJob] = useState(null)
   const st = data?.data
 
   const done = (msg) => () => { toast.success(msg); qc.invalidateQueries({ queryKey: ['site-ssl', site.uuid] }); onChanged() }
   const fail = (e) => toast.error(errMsg(e), { duration: 8000 })
-  const issue = useMutation({ mutationFn: () => api.issueSSL(site.uuid, email), onSuccess: done('Certificate ready, HTTPS enabled'), onError: fail })
+  const issue = useMutation({
+    mutationFn: () => api.startSSL(site.uuid, { force_https: !!st?.force_https || !st?.enabled }),
+    onSuccess: () => setJob({ uuid: site.uuid, domain: site.domain }),
+    onError: fail,
+  })
+  const finished = () => { qc.invalidateQueries({ queryKey: ['site-ssl', site.uuid] }); onChanged() }
   const force = useMutation({ mutationFn: (v) => api.updateWebsite(site.uuid, { force_https: v }), onSuccess: done('Updated'), onError: fail })
   const off = useMutation({ mutationFn: () => api.disableSSL(site.uuid), onSuccess: () => { setConfirmOff(false); done('SSL disabled')() }, onError: fail })
 
@@ -119,7 +115,7 @@ function SSLTab({ site, onChanged }) {
             <Switch checked={!!st.force_https} disabled={force.isPending} onChange={(v) => force.mutate(v)} label="Force HTTPS" />
           </label>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="secondary" disabled={issue.isPending} onClick={() => issue.mutate()}>{issue.isPending ? 'Renewing…' : 'Renew certificate'}</Button>
+            <Button variant="secondary" disabled={issue.isPending} onClick={() => issue.mutate()}>{issue.isPending ? 'Starting…' : 'Renew certificate'}</Button>
             <Button variant="secondary" className="!text-danger" onClick={() => setConfirmOff(true)}><ShieldOff size={14} />Disable SSL</Button>
           </div>
           <p className="text-xs text-text-tertiary">Certificates renew automatically through certbot; renewing here is only needed after changes.</p>
@@ -127,13 +123,14 @@ function SSLTab({ site, onChanged }) {
       ) : (
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); issue.mutate() }}>
           <p className="text-sm text-text-secondary">Get a free Let's Encrypt certificate. The domain must already point to this server and port 80 must be reachable from the internet.</p>
-          <Input label="Email (leave empty to use the server default)" value={email} onChange={(e) => setEmail(e.target.value)} />
           <div className="flex justify-end">
-            <Button type="submit" disabled={issue.isPending || site.status !== 'running'}>{issue.isPending ? 'Requesting… (up to a minute)' : 'Get certificate'}</Button>
+            <Button type="submit" disabled={issue.isPending || site.status !== 'running'}>{issue.isPending ? 'Starting…' : 'Get certificate'}</Button>
           </div>
           {site.status !== 'running' && <p className="text-xs text-warning">Start the site first.</p>}
         </form>
       )}
+
+      <SslProgress target={job} onClose={() => { setJob(null); finished() }} onFinished={finished} onRetry={() => { setJob(null); issue.mutate() }} />
 
       <Modal open={confirmOff} onClose={() => setConfirmOff(false)} title="Disable SSL?" size="sm">
         <p className="text-sm text-text-secondary">The site goes back to plain HTTP. The certificate stays on the server, so you can enable HTTPS again later.</p>
@@ -189,8 +186,8 @@ function ProxyTab({ site, onChanged }) {
                   </div>
                   <p className="text-xs text-text-tertiary">{r.name || 'Unnamed'} · {r.pass_host ? 'keeps the visitor’s Host header' : 'sends the target’s Host header'}</p>
                 </div>
-                <Button variant="ghost" className="h-8 w-8 px-0" title="Edit" onClick={() => setForm({ index: i, rule: { ...r } })}><Pencil size={14} /></Button>
-                <Button variant="ghost" className="h-8 w-8 px-0" title="Delete" disabled={save.isPending} onClick={() => save.mutate(rules.filter((_, j) => j !== i))}><Trash2 size={14} className="text-danger" /></Button>
+                <Button variant="ghost" className="h-8 w-8 !px-0" title="Edit" onClick={() => setForm({ index: i, rule: { ...r } })}><Pencil size={14} /></Button>
+                <Button variant="ghost" className="h-8 w-8 !px-0" title="Delete" disabled={save.isPending} onClick={() => save.mutate(rules.filter((_, j) => j !== i))}><Trash2 size={14} className="text-danger" /></Button>
               </li>
             ))}
           </ul>

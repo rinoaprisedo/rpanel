@@ -12,6 +12,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g.GET("/:uuid/logs", guard(m, "view"), h.Logs)
 	g.GET("/:uuid/config", guard(m, "view"), h.Config)
 	g.GET("/:uuid/ssl", guard(m, "view"), h.SSLInfo)
+	g.GET("/:uuid/ssl/progress", guard(m, "view"), h.SSLProgress)
 
 	g.POST("", guard(m, "create"), h.Create)
 	g.POST("/install", guard(m, "create"), h.Install)
@@ -20,6 +21,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g.POST("/:uuid/start", guard(m, "edit"), h.Start)
 	g.POST("/:uuid/stop", guard(m, "edit"), h.Stop)
 	g.POST("/:uuid/ssl", guard(m, "edit"), h.IssueSSL)
+	g.POST("/:uuid/ssl/start", guard(m, "edit"), h.StartSSL)
 	g.DELETE("/:uuid/ssl", guard(m, "edit"), h.DisableSSL)
 	g.PUT("/:uuid/config", guard(m, "edit"), h.SaveConfig)
 	g.PUT("/:uuid/proxies", guard(m, "edit"), h.SetProxies)

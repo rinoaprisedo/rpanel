@@ -555,3 +555,125 @@ func TestCreateRejectsPanelDomain(t *testing.T) {
 		t.Error("nothing should have been applied")
 	}
 }
+
+func waitJob(t *testing.T, e *env, uuid string) *SSLProgress {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if p := e.svc.SSLProgress(uuid); p != nil && p.State != "running" {
+			return p
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("job did not finish")
+	return nil
+}
+
+func newSite(t *testing.T, e *env) *Website {
+	t.Helper()
+	e.svc.skipCertbotCheck = true
+	e.svc.cfg.CertbotEmail = "" // no server default: certbot registers anonymously
+	e.svc.lookup = func(string) ([]string, error) { return []string{"203.0.113.9"}, nil }
+	w, err := e.svc.Create(context.Background(), CreateInput{Domain: "a.example.com", Type: TypeStatic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+func TestStartSSLReportsProgressAndEnablesHTTPS(t *testing.T) {
+	e := setup(t)
+	w := newSite(t, e)
+	first, err := e.svc.StartSSL(w.UUID.String(), "", true, nil)
+	if err != nil || first.State != "running" || len(first.Steps) != 4 {
+		t.Fatalf("start: %+v %v", first, err)
+	}
+	p := waitJob(t, e, w.UUID.String())
+	if p.State != "done" || p.Percent != 100 {
+		t.Fatalf("expected done at 100%%, got %+v", p)
+	}
+	for _, st := range p.Steps {
+		if st.Status != StepDone && st.Status != StepWarn {
+			t.Errorf("step %s is %s", st.Key, st.Status)
+		}
+	}
+	got, _ := e.svc.Get(w.UUID.String())
+	if !got.SSLEnabled || !got.ForceHTTPS {
+		t.Errorf("site not switched to HTTPS: %+v", got)
+	}
+	var args []string
+	for _, c := range e.run.calls {
+		if c.name == "certbot" {
+			args = c.args
+		}
+	}
+	if j := strings.Join(args, " "); !strings.Contains(j, "--register-unsafely-without-email") || !strings.Contains(j, "-d a.example.com") {
+		t.Errorf("certbot args %v", args)
+	}
+}
+
+func TestStartSSLUsesEmailWhenGiven(t *testing.T) {
+	e := setup(t)
+	w := newSite(t, e)
+	e.svc.cfg.CertbotEmail = "default@example.com"
+	if _, err := e.svc.StartSSL(w.UUID.String(), "me@example.com", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitJob(t, e, w.UUID.String())
+	for _, c := range e.run.calls {
+		if c.name == "certbot" && !strings.Contains(strings.Join(c.args, " "), "-m me@example.com") {
+			t.Errorf("e-mail missing: %v", c.args)
+		}
+	}
+	if got, _ := e.svc.Get(w.UUID.String()); got.ForceHTTPS {
+		t.Error("force_https was not requested")
+	}
+	if _, err := e.svc.StartSSL(w.UUID.String(), "nope", true, nil); !errors.Is(err, ErrBadInput) {
+		t.Errorf("a malformed e-mail must be refused, got %v", err)
+	}
+}
+
+func TestStartSSLFailureKeepsSiteOnHTTP(t *testing.T) {
+	e := setup(t)
+	w := newSite(t, e)
+	e.svc.lookup = func(string) ([]string, error) { return nil, errors.New("nxdomain") }
+	e.run.failCert = true
+	if _, err := e.svc.StartSSL(w.UUID.String(), "", true, nil); err != nil {
+		t.Fatal(err)
+	}
+	p := waitJob(t, e, w.UUID.String())
+	if p.State != "failed" || !strings.Contains(p.Error, "challenge failed") || !strings.Contains(p.Error, "no DNS record") {
+		t.Fatalf("unexpected result %+v", p)
+	}
+	var dns, cert string
+	for _, st := range p.Steps {
+		switch st.Key {
+		case "dns":
+			dns = st.Status
+		case "certificate":
+			cert = st.Status
+		}
+	}
+	if dns != StepWarn || cert != StepFailed {
+		t.Errorf("dns=%s certificate=%s", dns, cert)
+	}
+	if got, _ := e.svc.Get(w.UUID.String()); got.SSLEnabled {
+		t.Error("HTTPS must stay off after a failure")
+	}
+}
+
+func TestStartSSLRunningJobIsReused(t *testing.T) {
+	e := setup(t)
+	w := newSite(t, e)
+	a, _ := e.svc.StartSSL(w.UUID.String(), "", true, nil)
+	b, err := e.svc.StartSSL(w.UUID.String(), "", true, nil)
+	if err != nil || a == nil || b == nil {
+		t.Fatal(err)
+	}
+	waitJob(t, e, w.UUID.String())
+	if n := e.run.count("certbot", ""); n > 2 {
+		t.Errorf("certbot ran %d times", n)
+	}
+	if e.svc.SSLProgress("00000000-0000-0000-0000-000000000000") != nil {
+		t.Error("unknown site has no job")
+	}
+}

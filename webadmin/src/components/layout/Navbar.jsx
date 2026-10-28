@@ -7,6 +7,7 @@ import useAuthStore from '../../store/authStore'
 import usePageActionsStore from '../../store/pageActionsStore'
 import useThemeStore from '../../store/themeStore'
 import { logout as logoutApi } from '../../api/auth'
+import UpdateNotice from './UpdateNotice'
 
 function Navbar() {
   const toggleSidebar = useSidebarStore((s) => s.toggle)
@@ -38,6 +39,7 @@ function Navbar() {
         {pageActions}
       </div>
       <div className="flex shrink-0 items-center gap-3">
+        <UpdateNotice />
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}

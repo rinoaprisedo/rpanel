@@ -56,6 +56,9 @@ type Config struct {
 	PanelSSLDir    string
 	PanelPort      string
 
+	// GitHub repository RPanel updates itself from (owner/name).
+	ReleaseRepo string
+
 	// Database manager.
 	DBSecretKey string // 32 bytes, hex or any passphrase (hashed): encrypts stored DB admin passwords
 	BackupDir   string
@@ -129,6 +132,7 @@ func Load() *Config {
 		PanelGuardConf: getEnv("PANEL_GUARD_CONF", ""),
 		PanelSSLDir:    getEnv("PANEL_SSL_DIR", ""),
 		PanelPort:      getEnv("PANEL_PORT", ""),
+		ReleaseRepo:    getEnv("RPANEL_REPO", "rinoaprisedo/rpanel"),
 
 		DBSecretKey: getEnv("SECRET_KEY", getEnv("DB_SECRET_KEY", "")),
 		BackupDir:   getEnv("BACKUP_DIR", "/www/backup/database"),

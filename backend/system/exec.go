@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -25,7 +26,7 @@ var ErrNotAllowed = errors.New("command not allowed")
 
 // allowed lists the binaries panel modules may execute.
 var allowed = map[string]bool{
-	"nginx": true, "certbot": true, "systemctl": true, "ufw": true,
+	"nginx": true, "certbot": true, "systemd-run": true, "fail2ban-client": true, "supervisorctl": true, "systemctl": true, "ufw": true,
 	"apt-get": true, "apt-cache": true, "dpkg": true, "crontab": true,
 	"mysql": true, "mysqldump": true, "psql": true, "pg_dump": true, "pg_restore": true,
 	"docker": true, "zip": true, "unzip": true, "tar": true,
@@ -106,6 +107,98 @@ func (Exec) RunEnv(ctx context.Context, timeout time.Duration, env []string, nam
 		return res, fmt.Errorf("%s: %w", name, err)
 	}
 	return res, nil
+}
+
+// LineRunner is implemented by runners that can hand over output while the command runs
+// (used for long jobs such as apt upgrades, to show live progress).
+type LineRunner interface {
+	RunLines(ctx context.Context, timeout time.Duration, env []string, onLine func(string), name string, args ...string) (Result, error)
+}
+
+// lineWriter splits a byte stream into lines on \n and \r (apt redraws progress with \r).
+type lineWriter struct {
+	mu   sync.Mutex
+	buf  []byte
+	emit func(string)
+	all  capBuffer
+}
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.all.Write(p)
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexAny(w.buf, "\r\n")
+		if i < 0 {
+			break
+		}
+		if line := strings.TrimSpace(string(w.buf[:i])); line != "" {
+			w.emit(line)
+		}
+		w.buf = w.buf[i+1:]
+	}
+	if len(w.buf) > 1<<16 {
+		w.buf = w.buf[:0] // a runaway line without a terminator
+	}
+	return len(p), nil
+}
+
+// RunLines is like RunEnv but calls onLine for every output line (stdout and stderr merged) as it appears.
+func (Exec) RunLines(ctx context.Context, timeout time.Duration, env []string, onLine func(string), name string, args ...string) (Result, error) {
+	if !allowed[name] {
+		return Result{ExitCode: -1}, fmt.Errorf("%w: %q", ErrNotAllowed, name)
+	}
+	for _, a := range args {
+		if strings.ContainsRune(a, 0) {
+			return Result{ExitCode: -1}, errors.New("argument contains NUL byte")
+		}
+	}
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = append(append(os.Environ(), "DEBIAN_FRONTEND=noninteractive", "LC_ALL=C"), env...)
+	w := &lineWriter{emit: onLine}
+	cmd.Stdout, cmd.Stderr = w, w
+	err := cmd.Run()
+	out := w.all.String()
+	res := Result{Stdout: out, Stderr: ""}
+	if err != nil {
+		res.ExitCode = -1
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			res.ExitCode = ee.ExitCode()
+		}
+		if ctx.Err() == context.DeadlineExceeded {
+			return res, fmt.Errorf("%s: timed out after %s", name, timeout)
+		}
+		return res, fmt.Errorf("%s: %w", name, err)
+	}
+	return res, nil
+}
+
+// RunLines runs through r with live output when r supports it, otherwise it runs normally and
+// replays the output afterwards.
+func RunLines(ctx context.Context, r Runner, timeout time.Duration, env []string, onLine func(string), name string, args ...string) (Result, error) {
+	if lr, ok := r.(LineRunner); ok {
+		return lr.RunLines(ctx, timeout, env, onLine, name, args...)
+	}
+	var res Result
+	var err error
+	if er, ok := r.(EnvRunner); ok {
+		res, err = er.RunEnv(ctx, timeout, env, name, args...)
+	} else {
+		res, err = r.Run(ctx, timeout, name, args...)
+	}
+	for _, l := range strings.Split(res.Stdout+"\n"+res.Stderr, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			onLine(l)
+		}
+	}
+	return res, err
 }
 
 // Default is the process-wide Runner; tests may replace it.

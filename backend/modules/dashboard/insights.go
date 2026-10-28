@@ -211,16 +211,16 @@ func buildInsights(in insightInput) []Insight {
 	}
 	if in.Updates.Security > 0 {
 		add("updates", SevWarning, plural(in.Updates.Security, "security update", "security updates")+" pending",
-			fmt.Sprintf("%s available in total. Apply them with apt upgrade.", plural(in.Updates.Total, "package update is", "package updates are")), "/terminal")
+			fmt.Sprintf("%s available in total. Install them from the Updates page.", plural(in.Updates.Total, "package update is", "package updates are")), "/updates")
 	} else if in.Updates.Total > 0 {
-		add("updates", SevInfo, plural(in.Updates.Total, "package update", "package updates")+" available", "No security fixes among them.", "/terminal")
+		add("updates", SevInfo, plural(in.Updates.Total, "package update", "package updates")+" available", "No security fixes among them.", "/updates")
 	}
 	if in.Release.Available {
 		add("release", SevInfo, "RPanel "+in.Release.Latest+" is available",
-			"You are running "+in.Release.Current+". On the server run: sudo rpanel-update  (release notes: "+in.Release.URL+")", "")
+			"You are running "+in.Release.Current+". Click \u201cUpdate available\u201d in the top bar to read the changes and update.", "")
 	}
 	if in.Updates.RebootRequired {
-		add("reboot", SevWarning, "A reboot is required", "Installed updates (usually the kernel) only take effect after a restart.", "")
+		add("reboot", SevWarning, "A reboot is required", "Installed updates (usually the kernel) only take effect after a restart.", "/updates")
 	}
 
 	if t := in.Traffic1h; t != nil {

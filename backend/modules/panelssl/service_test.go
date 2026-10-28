@@ -209,3 +209,20 @@ func TestDisabledWithoutConfig(t *testing.T) {
 		t.Error("should be disabled")
 	}
 }
+
+func TestIssueWithoutEmail(t *testing.T) {
+	s, run, _ := setup(t)
+	if err := s.IssueLetsEncrypt(context.Background(), "panel.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	var args []string
+	for _, c := range run.calls {
+		if c.name == "certbot" {
+			args = c.args
+		}
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--register-unsafely-without-email") || strings.Contains(joined, "-m ") {
+		t.Errorf("expected an anonymous registration, got %v", args)
+	}
+}

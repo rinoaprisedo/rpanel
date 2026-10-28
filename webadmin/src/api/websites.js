@@ -19,3 +19,5 @@ export const saveSiteConfig = (uuid, extra_config) => client.put(`/websites/${uu
 export const getSiteSSL = (uuid) => client.get(`/websites/${uuid}/ssl`).then((r) => r.data)
 export const disableSSL = (uuid) => client.delete(`/websites/${uuid}/ssl`).then((r) => r.data)
 export const saveProxyRules = (uuid, rules) => client.put(`/websites/${uuid}/proxies`, { rules }).then((r) => r.data)
+export const startSSL = (uuid, payload = {}) => client.post(`/websites/${uuid}/ssl/start`, payload).then((r) => r.data)
+export const getSSLProgress = (uuid) => client.get(`/websites/${uuid}/ssl/progress`).then((r) => r.data)
