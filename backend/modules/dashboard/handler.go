@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strconv"
 
 	"rpanel/backend/config"
@@ -23,7 +24,11 @@ type Handler struct {
 // NewHandler starts the background sampler and update checker (stopped when ctx is cancelled).
 func NewHandler(ctx context.Context, db *gorm.DB, cfg *config.Config) *Handler {
 	c := NewCollector()
+	// Charts survive restarts and panel updates: the history lives in the private storage dir.
+	historyPath := filepath.Join(cfg.PrivateStoragePath, "metrics-history.gob")
+	c.LoadHistory(historyPath)
 	c.Start(ctx)
+	c.PersistHistory(ctx, historyPath)
 	h := &Handler{collector: c}
 	h.probes = NewProbes(system.Default, db, "", nil)
 	h.analyzer = NewAnalyzer(cfg.NginxLogDir, h.probes.Domains)
