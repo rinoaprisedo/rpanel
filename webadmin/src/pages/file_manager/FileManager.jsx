@@ -311,7 +311,7 @@ function FileManager() {
         )}
         {editor && !editor.image && (
           <div className="space-y-3">
-            <CodeEditor path={editor.path} value={editor.content} onChange={(v) => setEditor((cur) => ({ ...cur, content: v }))} onSave={saveEditor} />
+            <CodeEditor autoFocus path={editor.path} value={editor.content} onChange={(v) => setEditor((cur) => ({ ...cur, content: v }))} onSave={saveEditor} />
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-text-tertiary">Tab indents · Ctrl/Cmd+S saves</span>
               <div className="flex gap-2">

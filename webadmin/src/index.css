@@ -95,9 +95,9 @@ body {
   word-wrap: normal;
   font-variant-ligatures: none;
 }
-.code-ide-text.absolute { caret-color: #e6e6e6; }
+textarea.code-ide-text { caret-color: #e6e6e6; }
 .code-ide-text::selection { background: rgb(38 79 120 / 0.6); color: transparent; }
-.code-ide .hljs-comment, .code-ide .hljs-quote { color: #6a9955; font-style: italic; }
+.code-ide .hljs-comment, .code-ide .hljs-quote { color: #6a9955; }
 .code-ide .hljs-keyword, .code-ide .hljs-selector-tag, .code-ide .hljs-literal, .code-ide .hljs-doctag, .code-ide .hljs-name, .code-ide .hljs-section { color: #569cd6; }
 .code-ide .hljs-string, .code-ide .hljs-meta .hljs-string, .code-ide .hljs-template-variable { color: #ce9178; }
 .code-ide .hljs-number, .code-ide .hljs-addition { color: #b5cea8; }
@@ -107,8 +107,8 @@ body {
 .code-ide .hljs-meta, .code-ide .hljs-meta .hljs-keyword { color: #c586c0; }
 .code-ide .hljs-symbol, .code-ide .hljs-bullet, .code-ide .hljs-selector-class, .code-ide .hljs-selector-id, .code-ide .hljs-selector-attr, .code-ide .hljs-selector-pseudo { color: #d7ba7d; }
 .code-ide .hljs-regexp, .code-ide .hljs-deletion { color: #d16969; }
-.code-ide .hljs-emphasis { font-style: italic; }
-.code-ide .hljs-strong { font-weight: 700; }
+/* No italic/bold in the highlighted copy: the mono font has no such faces, the browser fakes them, and a faked
+   face can change glyph width, which would push the caret away from the text it sits on. */
 
 /* ---- chart palette: validated categorical slots + status roles, stepped per mode ---- */
 :root {
