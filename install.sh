@@ -130,8 +130,6 @@ read -r PANEL_PORT PUBLIC_IP < "$PREFIX/.install"
 # --- build ------------------------------------------------------------------------
 log "Building backend"
 cd "$SRC/backend"
-command -v swag >/dev/null || go install github.com/swaggo/swag/cmd/swag@latest
-swag init -g main.go -o docs
 CGO_ENABLED=0 go build -o "$PREFIX/bin/rpanel.new" main.go
 mv -f "$PREFIX/bin/rpanel.new" "$PREFIX/bin/rpanel"
 

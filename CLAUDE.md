@@ -19,8 +19,7 @@ cd backend
 go build ./...                      # compile check — run after every backend change
 go run main.go migrate              # AutoMigrate + partial unique indexes (idempotent)
 go run main.go seed                 # default roles/users/menus/permissions/settings (idempotent, FirstOrCreate)
-go run main.go                      # start server (needs docs/ generated first, see Swagger below)
-swag init -g main.go -o docs        # regenerate Swagger — docs/ is gitignored but main.go imports it
+go run main.go                      # start server
 
 # Frontend
 cd webadmin
@@ -39,10 +38,9 @@ This machine runs a **hybrid** setup, not the full `docker-compose.yml` stack: o
 # 1. Postgres + Redis only, under the `basego` compose project
 docker compose -p basego up -d postgres redis
 
-# 2. Backend — first time only: copy env, generate Swagger docs, migrate + seed
+# 2. Backend — first time only: copy env, migrate + seed
 cd backend
 cp .env.example .env            # already has DB_PORT=5401 / REDIS_PORT=6301 / APP_PORT=8800
-swag init -g main.go -o docs    # docs/ is gitignored, main.go imports it — required before `go run`
 go run main.go migrate
 go run main.go seed
 go run main.go                  # backend on :8800
@@ -54,7 +52,7 @@ npm install
 npm run dev                     # webadmin on :8801 (port set in vite.config.js, not Vite's default)
 ```
 
-Login: `admin@example.com` / `Admin@12345`. Swagger UI: `http://localhost:8800/swagger/index.html` (superadmin session required).
+Login: `admin@example.com` / `Admin@12345`.
 
 If `go`, `docker`, or `gh` aren't on `PATH` in a fresh shell, this Mac needed Xcode Command Line Tools + Homebrew installed first (`brew install go`), and Docker Desktop's CLI symlinked manually from `/Applications/Docker.app/Contents/Resources/bin/` into `/opt/homebrew/bin` — a one-time machine-setup issue, not a repo issue.
 
@@ -103,7 +101,7 @@ Generic key-value table (`modules/settings`) — adding a new setting is just a 
 - `session_auth.go` — Redis session check, attaches user/superadmin/token to Gin context.
 - `permission.go` — `RequirePermission` (the `guard()` used everywhere).
 - `rate_limit.go` — generic `RateLimit` (fixed-window Redis counter) + `LoginLockout`/`RegisterLoginFailure`/`ClearLoginFailures`.
-- `security.go` — `CORSMiddleware` (comma-separated origin whitelist via `FRONTEND_URL`, e.g. `http://localhost:8801,http://localhost:8802` for the React admin + Flutter web dev server), `SecurityHeaders` (CSP + X-Frame-Options + X-Content-Type-Options + HSTS + Referrer-Policy; CSP has a relaxed variant scoped to `/swagger` for swagger-ui's inline scripts), `RequestSizeLimit`.
+- `security.go` — `CORSMiddleware` (comma-separated origin whitelist via `FRONTEND_URL`, e.g. `http://localhost:8801,http://localhost:8802` for the React admin + Flutter web dev server), `SecurityHeaders` (CSP + X-Frame-Options + X-Content-Type-Options + HSTS + Referrer-Policy), `RequestSizeLimit`.
 - `csrf.go` — double-submit-cookie: issues a non-httpOnly `csrf_token` cookie, requires header `X-CSRF-Token` to match on any non-safe method (403 otherwise). `CSRF(secure, skipPrefixes...)` skips bearer-token APIs (`dev_tickets.APIPrefix`).
 - `xss.go` — `XSSSanitizer(skipPrefixes...)` strips HTML tags from JSON request bodies; same skip list as CSRF (Claude's notes legitimately contain code like `<Component>`).
 - `maintenance.go` — `MaintenanceMode`, see Settings above.
@@ -154,7 +152,7 @@ Backend: one test file, `modules/dev_tickets/platform_test.go` (table-driven, no
 
 `docker-compose.yml`: `postgres` (18-alpine, host port 5401), `redis` (7-alpine, host port 6301, **no password**), `backend` (build `./backend`, port 8800, `.env` + compose-level overrides for `DB_HOST`/`REDIS_HOST`/`FRONTEND_URL` since those need Docker network hostnames), `webadmin` (build `./webadmin`, port 8801, nginx-served build).
 
-`backend/Dockerfile`: multi-stage — `golang:1.26-alpine` builder runs `swag init` (regenerates `docs/`, gitignored) before compiling a static (`CGO_ENABLED=0`) binary, copied into a slim `alpine:3.20` runtime with `ca-certificates`. Also copies the `storage/` directory into the image, but **uploads aren't a mounted volume** in compose — avatar/logo/favicon uploads and private files (`storage/private`, ticket screenshots) are lost on container rebuild unless you add one.
+`backend/Dockerfile`: multi-stage — `golang:1.26-alpine` builder compiles a static (`CGO_ENABLED=0`) binary, copied into a slim `alpine:3.20` runtime with `ca-certificates`. Also copies the `storage/` directory into the image, but **uploads aren't a mounted volume** in compose — avatar/logo/favicon uploads and private files (`storage/private`, ticket screenshots) are lost on container rebuild unless you add one.
 
 `webadmin/Dockerfile`: `node:20-alpine` build stage (`npm install && npm run build`) → served by `nginx:1.27-alpine`, custom `nginx.conf` (SPA fallback + the production CSP/security headers mentioned above).
 

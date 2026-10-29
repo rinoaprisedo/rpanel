@@ -31,13 +31,15 @@ export function Panel({ title, children, action, className, hint }) {
 }
 
 export const RANGES = [['1h', 'Last hour', '1h'], ['6h', 'Last 6 hours', '6h'], ['24h', 'Last 24 hours', '24h'], ['7d', 'Last 7 days', '7d']]
-export const rangeLabel = (r) => RANGES.find((x) => x[0] === r)?.[1].toLowerCase()
+// Server history is aggregated, so it can look back further than the access logs behind the traffic page.
+export const HISTORY_RANGES = [...RANGES, ['30d', 'Last month', '1 month'], ['90d', 'Last 3 months', '3 months'], ['180d', 'Last 6 months', '6 months'], ['365d', 'Last year', '1 year']]
+export const rangeLabel = (r) => HISTORY_RANGES.find((x) => x[0] === r)?.[1].toLowerCase()
 
-export function RangeBar({ range, setRange, right, children }) {
+export function RangeBar({ range, setRange, right, children, ranges = RANGES }) {
   return (
     <div className="sticky top-[60px] z-10 -mx-1 flex flex-wrap items-center gap-3 rounded-lg border border-surface-border bg-surface-card/95 px-3 py-2 backdrop-blur">
       <div className="inline-flex rounded-md border border-surface-border p-0.5" role="group" aria-label="Time range">
-        {RANGES.map(([k, , short]) => (
+        {ranges.map(([k, , short]) => (
           <button key={k} onClick={() => setRange(k)} aria-pressed={range === k} className={cn('h-7 rounded-[8px] px-3 text-xs font-medium transition-colors', range === k ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-hover')}>{short}</button>
         ))}
       </div>

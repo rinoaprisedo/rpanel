@@ -65,7 +65,7 @@ Options are environment variables, e.g. `curl ... | sudo PANEL_DOMAIN=panel.exam
 | `RPANEL_VERSION` | latest | Install a specific version (or pass it as the first argument) |
 
 **Install from a local build** (no GitHub): on your development machine run `./deploy/build-release.sh arm64`
-(or `amd64`; needs Go, Node/npm and `swag`), copy `dist/rpanel-*.tar.gz` to the server, then
+(or `amd64`; needs Go and Node/npm), copy `dist/rpanel-*.tar.gz` to the server, then
 `tar xzf rpanel-*.tar.gz && cd rpanel-*/ && sudo ./deploy/install.sh`.
 
 ## First login
@@ -184,7 +184,7 @@ cron scripts in `/www/cron`, Compose projects in `/www/docker`.
 ## Development
 
 See `CLAUDE.md`. In short: Postgres + Redis via `docker compose -p rpanel up -d postgres redis`,
-`cd backend && swag init -g main.go -o docs && go run main.go migrate && go run main.go seed && go run main.go`,
+`cd backend && go run main.go migrate && go run main.go seed && go run main.go`,
 `cd webadmin && npm run dev`. Tests: `cd backend && go test ./...` and `cd webadmin && npm test`.
 Features that touch the host (nginx, ufw, docker, apt, cron) are unit-tested with fakes; verify them on a real
 Ubuntu VM before production use.
@@ -194,7 +194,7 @@ Ubuntu VM before production use.
 Bump `AppVersion` (and `@version`) in `backend/main.go`, commit and push to `main`, then:
 
 ```bash
-./deploy/release.sh --notes-file CHANGES.md     # needs gh (logged in), Go, Node, swag
+./deploy/release.sh --notes-file CHANGES.md     # needs gh (logged in), Go, Node
 ```
 
 It builds amd64 and arm64 tarballs, writes their `.sha256` files and creates the GitHub release `vX.Y.Z` with

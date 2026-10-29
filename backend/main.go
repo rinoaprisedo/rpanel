@@ -1,16 +1,5 @@
 // Package main wires up the RPanel backend: config, database, redis,
 // middleware stack, module routes, and the migrate/seed CLI subcommands.
-//
-// @title						RPanel API
-// @version					1.4.1
-// @description				Admin Panel Base Project API
-// @host						localhost:8800
-// @BasePath					/api/v1
-// @securityDefinitions.apikey	SessionCookie
-// @in							cookie
-// @name						session
-//
-//go:generate swag init -g main.go -o docs
 package main
 
 import (
@@ -23,7 +12,6 @@ import (
 	"rpanel/backend/config"
 	"rpanel/backend/database/migrations"
 	"rpanel/backend/database/seeders"
-	_ "rpanel/backend/docs"
 	"rpanel/backend/middleware"
 	"rpanel/backend/modules/activity_logs"
 	"rpanel/backend/modules/appstore"
@@ -51,13 +39,11 @@ import (
 	"rpanel/backend/utils"
 
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 // AppVersion is surfaced unauthenticated at GET /api/v1/version for the
 // frontend footer — bump alongside the @version annotation above.
-const AppVersion = "1.4.1"
+const AppVersion = "1.5.0"
 
 func main() {
 	cfg := config.Load()
@@ -189,9 +175,6 @@ func main() {
 		c.Next()
 	}
 
-	if cfg.AppEnv != "production" {
-		router.GET("/swagger/*any", sessionAuth, requireSuperadmin, ginSwagger.WrapHandler(swaggerFiles.Handler))
-	}
 	uploadLimiter := middleware.RateLimit(rdb, "upload", 10, time.Minute, func(c *gin.Context) string {
 		return c.ClientIP()
 	})

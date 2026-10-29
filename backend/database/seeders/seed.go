@@ -103,31 +103,46 @@ func seedMenus(db *gorm.DB) []uint64 {
 			},
 		},
 		{
-			Section: menus.MenuSection{Name: "Server", Icon: "Server", Order: 2},
+			Section: menus.MenuSection{Name: "Hosting", Icon: "Globe", Order: 2},
 			Menus: []menuDef{
 				{Name: "Websites", Icon: "Globe", Path: "websites"},
-				{Name: "Logs", Icon: "ScrollText", Path: "logs"},
-				{Name: "File Manager", Icon: "FolderOpen", Path: "file-manager"},
-				{Name: "Terminal", Icon: "Terminal", Path: "terminal"},
 				{Name: "Databases", Icon: "Database", Path: "databases"},
-				{Name: "Docker", Icon: "Container", Path: "docker"},
-				{Name: "Cron", Icon: "Clock", Path: "cron"},
-				{Name: "Firewall", Icon: "ShieldCheck", Path: "firewall"},
+				{Name: "File Manager", Icon: "FolderOpen", Path: "file-manager"},
+				{Name: "Logs", Icon: "ScrollText", Path: "logs"},
+			},
+		},
+		{
+			Section: menus.MenuSection{Name: "Apps & Services", Icon: "Boxes", Order: 3},
+			Menus: []menuDef{
 				{Name: "App Store", Icon: "Store", Path: "app-store"},
-				{Name: "Fail2ban", Icon: "ShieldAlert", Path: "fail2ban"},
+				{Name: "Docker", Icon: "Container", Path: "docker"},
 				{Name: "Supervisor", Icon: "Layers", Path: "supervisor"},
+				{Name: "Cron", Icon: "Clock", Path: "cron"},
+			},
+		},
+		{
+			Section: menus.MenuSection{Name: "Security", Icon: "ShieldCheck", Order: 4},
+			Menus: []menuDef{
+				{Name: "Firewall", Icon: "ShieldCheck", Path: "firewall"},
+				{Name: "Fail2ban", Icon: "ShieldAlert", Path: "fail2ban"},
+			},
+		},
+		{
+			Section: menus.MenuSection{Name: "Server", Icon: "Server", Order: 5},
+			Menus: []menuDef{
+				{Name: "Terminal", Icon: "Terminal", Path: "terminal"},
 				{Name: "Updates", Icon: "RefreshCw", Path: "updates"},
 			},
 		},
 		{
-			Section: menus.MenuSection{Name: "User Management", Icon: "Users", Order: 3},
+			Section: menus.MenuSection{Name: "User Management", Icon: "Users", Order: 6},
 			Menus: []menuDef{
 				{Name: "Users", Icon: "User", Path: "users"},
 				{Name: "Roles", Icon: "Shield", Path: "roles"},
 			},
 		},
 		{
-			Section: menus.MenuSection{Name: "System", Icon: "Settings", Order: 4},
+			Section: menus.MenuSection{Name: "System", Icon: "Settings", Order: 7},
 			Menus: []menuDef{
 				{Name: "Menus", Icon: "Menu", Path: "menus"},
 				{Name: "Settings", Icon: "Settings", Path: "settings"},
@@ -136,10 +151,20 @@ func seedMenus(db *gorm.DB) []uint64 {
 		},
 	}
 
+	// Installs from before the functional grouping keep their old layout until now: the first run that
+	// finds no "Hosting" section moves every menu into its new section, once. After that the layout
+	// belongs to whoever edits it on the Menus page.
+	var hosting int64
+	db.Model(&menus.MenuSection{}).Where("name = ?", "Hosting").Count(&hosting)
+	regroup := hosting == 0
+
 	var menuIDs []uint64
 	for _, s := range sections {
 		var section menus.MenuSection
 		db.Where("name = ?", s.Section.Name).Attrs(s.Section).FirstOrCreate(&section)
+		if regroup {
+			db.Model(&section).Update("order", s.Section.Order)
+		}
 
 		for i, m := range s.Menus {
 			var menu menus.Menu
@@ -151,6 +176,9 @@ func seedMenus(db *gorm.DB) []uint64 {
 				Order:         i + 1,
 				IsActive:      true,
 			}).FirstOrCreate(&menu)
+			if regroup {
+				db.Model(&menu).Updates(map[string]any{"menu_section_id": section.ID, "order": i + 1})
+			}
 			menuIDs = append(menuIDs, menu.ID)
 		}
 	}

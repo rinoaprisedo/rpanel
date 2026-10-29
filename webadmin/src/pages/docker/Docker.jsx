@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Play, Square, RotateCw, Trash2, ScrollText, Download, FileCode2, ArrowUpFromLine, ArrowDownToLine, Search, RefreshCw, ChevronUp, Boxes, LayoutList, Layers, Globe, Database, Library, Monitor } from 'lucide-react'
+import { Plus, Play, Square, RotateCw, Trash2, ScrollText, Download, FileCode2, ArrowUpFromLine, ArrowDownToLine, Search, RefreshCw, ChevronDown, ChevronUp, Boxes, LayoutList, Layers, Globe, Database, Library, Monitor } from 'lucide-react'
 import Tabs from '../../components/ui/Tabs'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -28,9 +28,9 @@ function Docker() {
   const st = stRes?.data
   const ready = st?.installed && st?.running
 
-  const containers = useQuery({ queryKey: ['d-containers'], queryFn: api.getContainers, enabled: !!ready && (tab === 'Containers' || tab === 'Overview'), refetchInterval: 5000, retry: false })
+  const containers = useQuery({ queryKey: ['d-containers'], queryFn: api.getContainers, enabled: !!ready && (tab === 'Containers' || tab === 'Overview'), refetchInterval: (q) => (tab === 'Overview' ? 1000 : 5000), retry: false })
   const overview = useQuery({ queryKey: ['d-overview'], queryFn: api.getDockerOverview, enabled: !!ready && tab === 'Overview', refetchInterval: 20000, retry: false })
-  const stats = useQuery({ queryKey: ['d-stats'], queryFn: api.getDockerStats, enabled: !!ready && tab === 'Overview', refetchInterval: 6000, retry: false })
+  const stats = useQuery({ queryKey: ['d-stats'], queryFn: api.getDockerStats, enabled: !!ready && tab === 'Overview', refetchInterval: 1000, retry: false })
   const images = useQuery({ queryKey: ['d-images'], queryFn: api.getImages, enabled: !!ready && tab === 'Images', retry: false })
   const projects = useQuery({ queryKey: ['d-projects'], queryFn: api.getProjects, enabled: tab === 'Compose', retry: false })
 
@@ -91,7 +91,7 @@ function Docker() {
       </div>
       <Tabs tabs={tabs} value={tab} onChange={changeTab} />
 
-      {tab === 'Overview' && <Overview overview={overview} containers={containers} stats={stats} refetch={() => { containers.refetch(); overview.refetch(); stats.refetch() }} />}
+      {tab === 'Overview' && <Overview overview={overview} containers={containers} stats={stats} act={act} showLogs={showLogs} setConfirm={setConfirm} refetch={() => { containers.refetch(); overview.refetch(); stats.refetch() }} />}
 
       {tab === 'Containers' && (
         <Table query={containers} search={search} onSearch={setSearch} placeholder="Search container or image…" action={<Button onClick={() => setRunForm(emptyRun)}><Plus size={14} />Run container</Button>}
@@ -217,9 +217,9 @@ const match = (list, q, text) => {
   return (list || []).filter((x) => !k || text(x).toLowerCase().includes(k))
 }
 
-function SearchBox({ value, onChange, placeholder }) {
+function SearchBox({ value, onChange, placeholder, className = 'w-full max-w-xs' }) {
   return (
-    <div className="relative w-full max-w-xs">
+    <div className={cn('relative', className)}>
       <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         className="h-[38px] w-full rounded-md border-[1.5px] border-surface-border bg-field pl-8 pr-3 text-sm text-text-primary outline-none transition-colors focus:border-primary" />
@@ -274,7 +274,7 @@ function Meter({ label, value, text, tone }) {
   )
 }
 
-function Overview({ overview, containers, stats, refetch }) {
+function Overview({ overview, containers, stats, refetch, act, showLogs, setConfirm }) {
   const [open, setOpen] = useState(true)
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
@@ -309,14 +309,20 @@ function Overview({ overview, containers, stats, refetch }) {
       </section>
 
       <section className="rounded-xl border border-surface-border bg-surface-card p-5">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-base font-semibold text-text-primary">Container List</h3>
-          <div className="flex flex-wrap items-center gap-2">
-            <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter containers" className="h-[38px] rounded-md border-[1.5px] border-surface-border bg-field px-3 text-sm text-text-primary outline-none focus:border-primary">
-              <option value="all">All</option><option value="running">Running</option><option value="stopped">Stopped</option>
-            </select>
-            <SearchBox value={q} onChange={setQ} placeholder="Search container name or image name" />
-            <Button variant="secondary" onClick={refetch} title="Refresh" aria-label="Refresh"><RefreshCw size={14} className={containers.isFetching ? 'animate-spin' : ''} /></Button>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-text-primary">Container List</h3>
+            <p className="text-xs text-text-tertiary">{list.length} of {containers.data?.data?.length ?? 0} · live usage updates every second</p>
+          </div>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="relative shrink-0">
+              <select value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter containers" className="h-[38px] appearance-none rounded-md border-[1.5px] border-surface-border bg-field pl-3 pr-9 text-sm text-text-primary outline-none focus:border-primary">
+                <option value="all">All</option><option value="running">Running</option><option value="stopped">Stopped</option>
+              </select>
+              <ChevronDown size={16} strokeWidth={1.7} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+            </div>
+            <SearchBox value={q} onChange={setQ} placeholder="Search container or image" className="min-w-0 flex-1 sm:w-64 sm:flex-none" />
+            <Button variant="secondary" className="shrink-0" onClick={refetch} title="Refresh" aria-label="Refresh"><RefreshCw size={14} className={containers.isFetching ? 'animate-spin' : ''} /></Button>
           </div>
         </div>
         {containers.isLoading ? (
@@ -329,7 +335,7 @@ function Overview({ overview, containers, stats, refetch }) {
               const running = c.state === 'running'
               const st = statBy[c.name]
               return (
-                <article key={c.id} className="rounded-lg border border-surface-border bg-surface-bg/40">
+                <article key={c.id} className="group relative rounded-lg border border-surface-border bg-surface-bg/40 transition-colors hover:border-surface-border-hover">
                   <header className="flex items-start gap-3 border-b border-surface-border p-3.5">
                     <Monitor size={20} className="mt-0.5 shrink-0 text-text-tertiary" />
                     <div className="min-w-0 flex-1">
@@ -339,6 +345,14 @@ function Overview({ overview, containers, stats, refetch }) {
                     </div>
                     <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', running ? 'bg-success' : c.state === 'paused' ? 'bg-warning' : 'bg-text-tertiary')} title={c.status} />
                   </header>
+                  <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 rounded-b-lg border-t border-surface-border bg-surface-card/95 px-2 py-1.5 opacity-0 backdrop-blur transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                    {running
+                      ? <><Button variant="ghost" title="Stop" aria-label={`Stop ${c.name}`} disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'stop' })}><Square size={14} /></Button>
+                          <Button variant="ghost" title="Restart" aria-label={`Restart ${c.name}`} disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'restart' })}><RotateCw size={14} /></Button></>
+                      : <Button variant="ghost" title="Start" aria-label={`Start ${c.name}`} disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'start' })}><Play size={14} /></Button>}
+                    <Button variant="ghost" title="Logs" aria-label={`Logs of ${c.name}`} onClick={() => showLogs(c.name, () => api.getContainerLogs(c.id))}><ScrollText size={14} /></Button>
+                    <Button variant="ghost" title="Remove" aria-label={`Remove ${c.name}`} onClick={() => setConfirm({ title: `Remove ${c.name}`, message: 'The container is force-removed. Data in anonymous volumes is lost.', run: () => api.removeContainer(c.id) })}><Trash2 size={14} className="text-danger" /></Button>
+                  </div>
                   <div className="space-y-3 p-3.5">
                     {running ? (
                       <>

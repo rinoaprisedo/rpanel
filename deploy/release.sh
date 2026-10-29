@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publishes the current version (const AppVersion in backend/main.go) as a GitHub Release:
-# both Linux tarballs, their checksums and install-online.sh. Needs gh (logged in), Go, Node, swag.
+# both Linux tarballs, their checksums and install-online.sh. Needs gh (logged in), Go, Node.
 #   ./deploy/release.sh [--notes "text" | --notes-file FILE]
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

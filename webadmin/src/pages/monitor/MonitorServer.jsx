@@ -19,7 +19,7 @@ import { cn } from '../../utils/cn'
 import { getOverview, getHistory, getHistoryRange, getProcesses, getInsights } from '../../api/dashboard'
 import { getActivityLogs } from '../../api/activityLogs'
 import { formatBytes, formatUptime } from '../../utils/format'
-import { Section, Panel, RangeBar, rangeLabel, Facts } from './parts'
+import { Section, Panel, RangeBar, rangeLabel, Facts, HISTORY_RANGES } from './parts'
 
 const POLL = 3000
 
@@ -74,16 +74,17 @@ function MonitorServer() {
               <AttentionButton items={insights.insights} />
             </div>
           }
-        />
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <StatTile label="CPU" value={o.cpu_percent.toFixed(0)} unit="%" meter={o.cpu_percent} sub={`${cores} core${cores > 1 ? 's' : ''} · ${(o.cpu_model || '').replace(/\(R\)|\(TM\)|CPU /g, '').trim()}`} trend={live.map((p) => p.cpu)} trendMax={100} />
+            <StatTile label="Memory" value={o.mem_percent.toFixed(0)} unit="%" meter={o.mem_percent} sub={`${formatBytes(o.mem_used)} of ${formatBytes(o.mem_total)}`} trend={live.map((p) => p.mem)} trendMax={100} />
+            <StatTile label={`Disk ${rootDisk?.mount || ''}`} value={(rootDisk?.percent || 0).toFixed(0)} unit="%" meter={rootDisk?.percent || 0} warnAt={80} sub={rootDisk ? `${formatBytes(rootDisk.total - rootDisk.used)} free of ${formatBytes(rootDisk.total)}` : '—'} />
+            <StatTile label="Load average" value={o.load1.toFixed(2)} meter={(o.load5 / cores) * 100} warnAt={100} critAt={200} sub={`5m ${o.load5.toFixed(2)} · 15m ${o.load15.toFixed(2)} · ${(o.load5 / cores).toFixed(2)} per core`} trend={live.map((p) => p.load1)} />
+          </div>
+        </HealthCard>
       ) : <Skeleton className="h-64 w-full" />}
 
-      {/* ---- live resources ---- */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="CPU" value={o.cpu_percent.toFixed(0)} unit="%" meter={o.cpu_percent} sub={`${cores} core${cores > 1 ? 's' : ''} · ${(o.cpu_model || '').replace(/\(R\)|\(TM\)|CPU /g, '').trim()}`} trend={live.map((p) => p.cpu)} trendMax={100} />
-        <StatTile label="Memory" value={o.mem_percent.toFixed(0)} unit="%" meter={o.mem_percent} sub={`${formatBytes(o.mem_used)} of ${formatBytes(o.mem_total)}`} trend={live.map((p) => p.mem)} trendMax={100} />
-        <StatTile label={`Disk ${rootDisk?.mount || ''}`} value={(rootDisk?.percent || 0).toFixed(0)} unit="%" meter={rootDisk?.percent || 0} warnAt={80} sub={rootDisk ? `${formatBytes(rootDisk.total - rootDisk.used)} free of ${formatBytes(rootDisk.total)}` : '—'} />
-        <StatTile label="Load average" value={o.load1.toFixed(2)} meter={(o.load5 / cores) * 100} warnAt={100} critAt={200} sub={`5m ${o.load5.toFixed(2)} · 15m ${o.load15.toFixed(2)} · ${(o.load5 / cores).toFixed(2)} per core`} trend={live.map((p) => p.load1)} />
-      </div>
+      {/* ---- more live resources ---- */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Network" value={`${formatBytes(o.net_rx_bps)}/s`} sub={`↑ ${formatBytes(o.net_tx_bps)}/s · total ↓ ${formatBytes(o.net_rx_total)} ↑ ${formatBytes(o.net_tx_total)}`} trend={live.map((p) => p.net_rx)} />
         <StatTile label="Disk I/O" value={`${formatBytes(o.disk_read_bps)}/s`} sub={`read · write ${formatBytes(o.disk_write_bps)}/s`} trend={live.map((p) => (p.disk_read || 0) + (p.disk_write || 0))} />
@@ -103,11 +104,11 @@ function MonitorServer() {
         ]} />
       </Panel>
 
-      <RangeBar range={range} setRange={setRange} right={`${rangeLabel(range)}${busy ? ' · updating…' : ''}`} />
+      <RangeBar ranges={HISTORY_RANGES} range={range} setRange={setRange} right={`${rangeLabel(range)}${busy ? ' · updating…' : ''}`} />
 
       {/* ---- history ---- */}
-      <Section title="Resources over time" hint="Averages, kept in memory while the panel runs">
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <Section title="Resources over time" hint="Averages of what the panel has recorded">
+        <div className="space-y-3">
           <ChartCard
             busy={busy} title="CPU & memory" subtitle="Share of capacity in use"
             legend={[<LegendItem key="c" shape="line" color="var(--viz-1)" label="CPU" value={`${o.cpu_percent.toFixed(0)}%`} />, <LegendItem key="m" shape="line" color="var(--viz-2)" label="Memory" value={`${o.mem_percent.toFixed(0)}%`} />]}
@@ -129,6 +130,8 @@ function MonitorServer() {
           >
             <LineChart points={points} area refLine={{ value: cores, label: `${cores} core${cores > 1 ? 's' : ''}` }} fmt={(v) => v.toFixed(1)} series={[{ key: 'load1', label: 'Load (1m)', color: 'var(--viz-1)' }]} ariaLabel={`Load average over the ${rangeLabel(range)}`} />
           </ChartCard>
+        </div>
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
           <ChartCard
             busy={busy} title="Disk I/O" subtitle="Read and write throughput of the physical disks"
             legend={[<LegendItem key="r" shape="line" color="var(--viz-1)" label="Read" value={`${formatBytes(o.disk_read_bps)}/s`} />, <LegendItem key="w" shape="line" color="var(--viz-2)" label="Write" value={`${formatBytes(o.disk_write_bps)}/s`} />]}

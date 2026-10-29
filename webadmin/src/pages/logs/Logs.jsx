@@ -88,13 +88,13 @@ function Logs() {
   const filtering = !!(kw || from || to)
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-      <aside className="rounded-xl border border-surface-border bg-surface-card p-3">
+    <div className="grid gap-4 lg:h-[calc(100vh-150px)] lg:min-h-[420px] lg:grid-cols-[260px_1fr]">
+      <aside className="flex min-h-0 flex-col rounded-xl border border-surface-border bg-surface-card p-3">
         <div className="relative mb-3">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
           <input value={siteQ} onChange={(e) => setSiteQ(e.target.value)} placeholder="Search site…" className="h-[38px] w-full rounded-md border-[1.5px] border-surface-border bg-field pl-8 pr-3 text-sm outline-none focus:border-primary" />
         </div>
-        <ul className="max-h-[70vh] space-y-1 overflow-y-auto">
+        <ul className="max-h-[40vh] min-h-0 space-y-1 overflow-y-auto lg:max-h-none lg:flex-1">
           <li>
             <button onClick={() => setSite('all')} className={cn('flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors', site === 'all' ? 'bg-primary/10 font-medium text-primary' : 'text-text-secondary hover:bg-surface-hover')}>
               <Layers size={14} />All websites
@@ -113,7 +113,7 @@ function Logs() {
         </ul>
       </aside>
 
-      <section className="min-w-0 space-y-3">
+      <section className="flex min-h-0 min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-text-secondary">{site === 'all' ? 'All websites' : site}</span>
           <span className="rounded-md bg-surface-hover px-2 py-0.5 font-mono text-xs text-text-secondary">{fmtSize(fileSize)}</span>
@@ -147,11 +147,11 @@ function Logs() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-ide-border bg-[#0b0f14]">
+        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-ide-border bg-[#0b0f14]">
           {log.isLoading ? <Skeleton className="h-[52vh] w-full" /> : log.isError ? (
             <p className="p-6 text-sm text-danger">{errMsg(log.error)}</p>
           ) : (
-            <div className="max-h-[60vh] min-h-[40vh] overflow-auto p-4 font-mono text-xs leading-5">
+            <div className="max-h-[60vh] min-h-[40vh] overflow-auto p-4 lg:max-h-none lg:min-h-0 lg:flex-1 font-mono text-xs leading-5">
               {data?.lines?.length ? data.lines.map((l, i) => <Line key={i} text={l} kw={kw} type={type} />)
                 : <p className="py-10 text-center text-slate-500">{filtering ? 'No line matches the filter.' : 'This log is empty.'}</p>}
             </div>

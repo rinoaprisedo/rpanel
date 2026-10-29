@@ -49,10 +49,10 @@ func (h *Handler) Overview(c *gin.Context) {
 }
 
 // History godoc
-// @Summary		Metric samples: the last ~5 minutes (3s apart), or averaged points for range 1h|6h|24h|7d
+// @Summary		Metric samples: the last ~5 minutes (3s apart), or averaged points for range 1h|6h|24h|7d|30d|90d|180d|365d
 // @Tags			dashboard
 // @Security		SessionCookie
-// @Param			range	query	string	false	"1h|6h|24h|7d (history is kept in memory since the panel started)"
+// @Param			range	query	string	false	"1h|6h|24h|7d|30d|90d|180d|365d (history is kept in memory since the panel started)"
 // @Success		200	{object}	utils.Response
 // @Router			/dashboard/history [get]
 func (h *Handler) History(c *gin.Context) {

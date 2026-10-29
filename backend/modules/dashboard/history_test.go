@@ -1,6 +1,9 @@
 package dashboard
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestAddLongAveragesPerMinute(t *testing.T) {
 	c := NewCollector()
@@ -43,5 +46,38 @@ func TestDownsampleBucketsAndWindow(t *testing.T) {
 func TestHistoryRangeRejectsUnknown(t *testing.T) {
 	if _, err := NewCollector().HistoryRange("30y"); err == nil {
 		t.Error("unknown range must be rejected")
+	}
+}
+
+func TestAddHourlyAveragesPerHour(t *testing.T) {
+	c := NewCollector()
+	base := int64(1_700_002_800)     // on an hour boundary
+	for m := int64(0); m < 61; m++ { // 61 minutes: the last one closes hour 1
+		c.mu.Lock()
+		c.addHourly(Point{Time: base + m*60, CPU: float64(m)})
+		c.mu.Unlock()
+	}
+	if len(c.hourly) != 1 {
+		t.Fatalf("want 1 finished hour, got %d", len(c.hourly))
+	}
+	if got := c.hourly[0]; got.CPU != 29.5 || got.Time != base {
+		t.Errorf("hour average wrong: %+v", got)
+	}
+}
+
+func TestLongRangesUseHourlySeries(t *testing.T) {
+	c := NewCollector()
+	now := time.Now().Unix()
+	c.hourly = []Point{{Time: now - 100*24*3600, CPU: 40}}
+	for _, k := range []string{"30d", "90d", "180d", "365d"} {
+		if _, err := c.HistoryRange(k); err != nil {
+			t.Errorf("%s must be accepted: %v", k, err)
+		}
+	}
+	if pts, _ := c.HistoryRange("90d"); len(pts) != 0 {
+		t.Errorf("a point from 100 days ago is outside 90d: %+v", pts)
+	}
+	if pts, _ := c.HistoryRange("180d"); len(pts) != 1 {
+		t.Errorf("180d should include it: %+v", pts)
 	}
 }

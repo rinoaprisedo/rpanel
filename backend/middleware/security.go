@@ -26,15 +26,8 @@ func CORSMiddleware(frontendURLs string) gin.HandlerFunc {
 	return cors.New(cfg)
 }
 
-// swaggerCSP is deliberately looser than defaultCSP: swagger-ui-dist injects
-// inline <script>/<style> tags to bootstrap the UI, so 'unsafe-inline' is
-// required there. It's scoped to /swagger, which already sits behind
-// SessionAuth + requireSuperadmin, so the relaxed policy only reaches admins.
 const (
 	defaultCSP = "default-src 'self'; script-src 'self'; style-src 'self'; " +
-		"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; " +
-		"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-	swaggerCSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; " +
 		"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
@@ -46,11 +39,7 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		if strings.HasPrefix(c.Request.URL.Path, "/swagger") {
-			c.Header("Content-Security-Policy", swaggerCSP)
-		} else {
-			c.Header("Content-Security-Policy", defaultCSP)
-		}
+		c.Header("Content-Security-Policy", defaultCSP)
 		c.Next()
 	}
 }

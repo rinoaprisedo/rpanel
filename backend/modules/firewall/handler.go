@@ -17,7 +17,18 @@ const module = "firewall"
 type Handler struct{ svc *Service }
 
 func NewHandler(cfg *config.Config) *Handler {
-	return &Handler{svc: NewService(system.Default, cfg.SSHDConfig, cfg.AppPort, cfg.FirewallProtectedPorts)}
+	return &Handler{svc: NewService(system.Default, cfg.SSHDConfig, publicPanelPort(cfg), cfg.FirewallProtectedPorts)}
+}
+
+// publicPanelPort is the port people open the panel on. In production that is the nginx TLS port
+// (PANEL_PORT); APP_PORT is only the backend's loopback port behind it, so protecting it would
+// leave the real panel port closed when the firewall is enabled. Without nginx (local dev) the
+// backend port is the one in use.
+func publicPanelPort(cfg *config.Config) string {
+	if cfg.PanelPort != "" {
+		return cfg.PanelPort
+	}
+	return cfg.AppPort
 }
 
 // fail maps errors; lockout warnings carry code "lockout" so the UI can ask for
@@ -28,6 +39,8 @@ func fail(c *gin.Context, err error) {
 		utils.Error(c, 400, err.Error())
 	case errors.Is(err, ErrLockout):
 		c.JSON(409, gin.H{"success": false, "code": "lockout", "message": err.Error()})
+	case errors.Is(err, ErrPanelRule):
+		utils.Error(c, 403, err.Error())
 	case errors.Is(err, ErrStale):
 		c.JSON(409, gin.H{"success": false, "code": "stale", "message": err.Error()})
 	default:

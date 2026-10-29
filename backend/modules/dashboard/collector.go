@@ -126,6 +126,9 @@ type Collector struct {
 	// long keeps one averaged point per minute for up to 7 days (in memory only).
 	long []Point
 	acc  minuteAcc
+	// hourly keeps one averaged point per hour for up to a year, for the long chart ranges (in memory only).
+	hourly []Point
+	hacc   minuteAcc
 }
 
 func NewCollector() *Collector { return &Collector{} }

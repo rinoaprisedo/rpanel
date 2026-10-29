@@ -101,7 +101,6 @@ Dipasang via `install-online.sh` lalu di-upgrade ke 1.3.1. Hasil yang dikonfirma
 | Endpoint sensitif tanpa sesi | `auth/me`, `users`, `file-manager`, `databases`, `settings` → **401** |
 | Rate-limit/lockout login | 5× gagal → 401, lalu → **429** |
 | CSRF (POST tanpa token) | **403** |
-| Swagger di production | tidak terekspos (hanya SPA fallback) |
 | forgot-password di production | **404** (dinonaktifkan) |
 | Header SPA | CSP + X-Frame-Options DENY + nosniff + HSTS + Referrer-Policy |
 | `/uploads` | CSP `default-src 'none'; sandbox` + nosniff |

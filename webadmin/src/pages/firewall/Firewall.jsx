@@ -138,7 +138,7 @@ function Firewall() {
                 <td className="p-3"><Badge variant={actionVariant[r.action] || 'neutral'}>{r.action}</Badge></td>
                 <td className="p-3 text-text-secondary">{r.direction}</td>
                 <td className="p-3 font-mono text-xs text-text-secondary">{r.from}</td>
-                <td className="p-3 text-right">{canDelete('firewall') && <Button variant="ghost" className="h-8 px-2 opacity-50 group-hover:opacity-100" title="Delete rule" onClick={() => setDel(r)}><Trash2 size={14} className="text-danger" /></Button>}</td>
+                <td className="p-3 text-right">{r.locked ? <span className="inline-flex h-8 items-center gap-1 px-2 text-xs text-text-tertiary" title="This rule keeps the panel reachable and cannot be deleted"><Lock size={13} />Panel</span> : canDelete('firewall') && <Button variant="ghost" className="h-8 px-2 opacity-50 group-hover:opacity-100" title="Delete rule" onClick={() => setDel(r)}><Trash2 size={14} className="text-danger" /></Button>}</td>
               </tr>
             ))}
             {!rules.length && <tr><td colSpan={6} className="p-10 text-center text-text-secondary">{st.rules.length ? 'No rule matches' : 'No rules yet'}</td></tr>}

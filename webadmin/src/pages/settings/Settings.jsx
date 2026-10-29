@@ -1,7 +1,6 @@
-import { useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import Tabs from '../../components/ui/Tabs'
 import PanelSsl from './PanelSsl'
-import RpanelUpdate from './RpanelUpdate'
 import { useEffect, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -15,11 +14,11 @@ import { fileURL } from '../../utils/url'
 import usePageActions from '../../hooks/usePageActions'
 import useSettingsStore from '../../store/settingsStore'
 
-const tabs = ['General', 'Appearance', 'Panel SSL', 'RPanel Update', 'Maintenance']
+const tabs = ['General', 'Appearance', 'Panel SSL', 'Maintenance']
 
 function Settings() {
   const [params] = useSearchParams()
-  const [tab, setTab] = useState({ 'panel-ssl': 'Panel SSL', 'rpanel-update': 'RPanel Update' }[params.get('tab')] || 'General')
+  const [tab, setTab] = useState({ 'panel-ssl': 'Panel SSL' }[params.get('tab')] || 'General')
   const [appName, setAppName] = useState('')
   const [maintenance, setMaintenance] = useState(false)
   const [logoPreview, setLogoPreview] = useState(null)
@@ -88,6 +87,7 @@ function Settings() {
     ),
   )
 
+  if (params.get('tab') === 'rpanel-update') return <Navigate to="/updates?tab=rpanel" replace /> // moved to the Updates page
   if (isLoading) return <Skeleton className="h-96 w-full" />
 
   return (
@@ -151,8 +151,6 @@ function Settings() {
         )}
 
         {tab === 'Panel SSL' && <PanelSsl />}
-
-        {tab === 'RPanel Update' && <RpanelUpdate />}
 
         {tab === 'Maintenance' && (
           <div className="max-w-md space-y-4">

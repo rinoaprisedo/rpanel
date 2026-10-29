@@ -22,7 +22,9 @@ var (
 	// ErrLockout is returned when an operation could cut off SSH, the panel or
 	// the requester; the caller may repeat it with Confirm set.
 	ErrLockout = errors.New("this change could lock you out")
-	ErrStale   = errors.New("rules changed since you loaded the list; refresh and try again")
+	// ErrPanelRule is returned when someone tries to delete the rule that lets people reach the panel.
+	ErrPanelRule = errors.New("this rule keeps the panel reachable and cannot be deleted")
+	ErrStale     = errors.New("rules changed since you loaded the list; refresh and try again")
 
 	portRe    = regexp.MustCompile(`^[0-9]{1,5}(:[0-9]{1,5})?$`)
 	commentRe = regexp.MustCompile(`^[A-Za-z0-9 _.,-]{0,60}$`)
@@ -38,6 +40,8 @@ type Rule struct {
 	Direction string `json:"direction"`
 	From      string `json:"from"`
 	V6        bool   `json:"v6"`
+	// Locked marks the inbound allow rule for the panel port; it cannot be deleted from the panel.
+	Locked bool `json:"locked"`
 }
 
 type Status struct {
@@ -138,6 +142,9 @@ func (s *Service) Status(ctx context.Context) Status {
 	st.Installed = true
 	st.Active = strings.Contains(res.Stdout, "Status: active")
 	st.Rules = ParseRules(res.Stdout)
+	for i := range st.Rules {
+		st.Rules[i].Locked = s.isPanelRule(st.Rules[i])
+	}
 	if v, err := s.run.Run(ctx, 15*time.Second, "ufw", "status", "verbose"); err == nil {
 		if m := defaultRe.FindStringSubmatch(v.Stdout); m != nil {
 			st.Incoming, st.Outgoing = m[1], m[2]
@@ -307,6 +314,19 @@ func (s *Service) AddRule(ctx context.Context, in RuleInput, actorIP string) err
 	return s.ufw(ctx, args...)
 }
 
+// isPanelRule reports whether r is an inbound allow rule covering the panel's public port.
+func (s *Service) isPanelRule(r Rule) bool {
+	if s.panelPort == 0 || r.Action != "ALLOW" || r.Direction != "IN" {
+		return false
+	}
+	for _, pr := range portsOf(r.To) {
+		if s.panelPort >= pr[0] && s.panelPort <= pr[1] {
+			return true
+		}
+	}
+	return false
+}
+
 // portsOf extracts the numeric ports/ranges from a rule's "To" column ("22/tcp",
 // "80,443/tcp", "8000:8100/tcp", "22/tcp (v6)"). Rules with app profiles yield none.
 func portsOf(to string) [][2]int {
@@ -347,6 +367,9 @@ func (s *Service) DeleteRule(ctx context.Context, n int, expectedTo, expectedAct
 	}
 	if rule == nil || rule.To != expectedTo || rule.Action != expectedAction {
 		return ErrStale
+	}
+	if s.isPanelRule(*rule) {
+		return ErrPanelRule // no confirm override: without it the panel is unreachable
 	}
 	if rule.Action == "ALLOW" && rule.Direction == "IN" && !confirm {
 		for _, pr := range portsOf(rule.To) {

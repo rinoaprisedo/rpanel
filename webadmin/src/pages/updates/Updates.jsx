@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import {
   ShieldCheck, ShieldAlert, RefreshCw, Download, Power, Search, Check, LoaderCircle, X, Circle, TriangleAlert, ArrowRight, Clock,
@@ -11,6 +12,8 @@ import Modal from '../../components/ui/Modal'
 import Switch from '../../components/ui/Switch'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Skeleton from '../../components/ui/Skeleton'
+import Tabs from '../../components/ui/Tabs'
+import RpanelUpdate from './RpanelUpdate'
 import usePermission from '../../hooks/usePermission'
 import { cn } from '../../utils/cn'
 import * as api from '../../api/updates'
@@ -137,7 +140,7 @@ function fmtTime(ts) {
   return new Date(ts * 1000).toLocaleDateString()
 }
 
-function Updates() {
+function SystemUpdates() {
   const qc = useQueryClient()
   const { canEdit } = usePermission()
   const editable = canEdit('updates')
@@ -289,6 +292,20 @@ function Updates() {
         confirmLabel="Restart now" loadingLabel="Restarting…"
       />
       <RebootDialog open={rebooting} />
+    </div>
+  )
+}
+
+const TABS = ['System packages', 'RPanel']
+
+// One home for every kind of update: the server's OS packages and RPanel itself.
+function Updates() {
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState(params.get('tab') === 'rpanel' ? 'RPanel' : TABS[0])
+  return (
+    <div className="space-y-5">
+      <Tabs tabs={TABS} value={tab} onChange={setTab} />
+      {tab === 'RPanel' ? <RpanelUpdate /> : <SystemUpdates />}
     </div>
   )
 }

@@ -1,10 +1,7 @@
-.PHONY: swagger run build
+.PHONY: run build
 
-swagger:
-	swag init -g main.go -o docs
-
-run: swagger
+run:
 	go run main.go
 
-build: swagger
+build:
 	go build -o rpanel main.go
