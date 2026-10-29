@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowUp, RefreshCw, FolderPlus, FilePlus, Upload, Trash2, Copy, Scissors, ClipboardPaste, Archive, Folder, File as FileIcon, Search, X, TerminalSquare } from 'lucide-react'
+import { ArrowUp, RefreshCw, FolderPlus, FilePlus, Upload, Trash2, Copy, Scissors, ClipboardPaste, Archive, Search, X, TerminalSquare } from 'lucide-react'
+import { iconFor } from '../../utils/fileIcon'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
@@ -48,6 +49,10 @@ function FileManager() {
   const [deep, setDeep] = useState(false) // also search inside sub-folders
   const [moreFor, setMoreFor] = useState(null) // path whose "More" menu is open
   const fileInput = useRef(null)
+  // Scroll position of each folder we left, so going back (Up, breadcrumb) lands where you were
+  // instead of at the top. `restore` is the position to apply once the next folder has rendered.
+  const scrollMemory = useRef(new Map())
+  const restore = useRef(null)
 
   const { data: rootsRes } = useQuery({ queryKey: ['fm-roots'], queryFn: api.getRoots })
   const cwd = path ?? rootsRes?.data?.[0]
@@ -77,6 +82,13 @@ function FileManager() {
   })
 
   const listed = data?.data?.entries
+
+  // The page is the scroller. Wait for the listing: while it loads the page is short and the browser would clamp us to the top.
+  useLayoutEffect(() => {
+    if (restore.current === null || !listed) return
+    window.scrollTo(0, restore.current)
+    restore.current = null
+  }, [cwd, listed])
   const entries = useMemo(() => {
     if (searching) return search.data?.data?.entries || []
     const all = listed || []
@@ -101,7 +113,13 @@ function FileManager() {
       setBusy(false)
     }
   }
-  const go = (p) => { setPath(p); localStorage.setItem(lastKey, p); setSelected([]); setQuery(''); setMoreFor(null) }
+  const go = (p) => {
+    if (p !== cwd) {
+      scrollMemory.current.set(cwd, window.scrollY)
+      restore.current = scrollMemory.current.get(p) ?? 0 // folders never visited start at the top
+    }
+    setPath(p); localStorage.setItem(lastKey, p); setSelected([]); setQuery(''); setMoreFor(null)
+  }
   const toggle = (p) => setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]))
   const openEntry = async (e) => {
     if (e.is_dir) return go(e.path)
@@ -238,7 +256,7 @@ function FileManager() {
                     <td className="p-2"><input type="checkbox" checked={selected.includes(e.path)} onChange={() => toggle(e.path)} /></td>
                     <td className="p-2">
                       <button className="flex items-center gap-2 text-left text-text-primary hover:text-primary" onClick={() => openEntry(e)}>
-                        {e.is_dir ? <Folder size={15} className="shrink-0 text-amber-500" /> : <FileIcon size={15} className="shrink-0 text-text-secondary" />}
+                        {(() => { const k = iconFor(e); return <k.Icon size={16} strokeWidth={1.8} className={`shrink-0 ${k.color}`} title={k.label} aria-label={k.label} /> })()}
                         <span>{e.name}{e.is_link && <span className="text-xs text-text-secondary"> →</span>}</span>
                       </button>
                       {searching && <div className="ml-[23px] truncate font-mono text-[11px] text-text-tertiary">in {where}</div>}
