@@ -30,6 +30,31 @@ func TestHealthUsesSustainedCPUNotOneSpike(t *testing.T) {
 	}
 }
 
+func TestHealthSeesCPUPinnedForFifteenSeconds(t *testing.T) {
+	in := healthy()
+	in.Overview.CPU = 100
+	calm := make([]Point, 95) // ~4.75 minutes at 3 s
+	for i := range calm {
+		calm[i] = Point{CPU: 5}
+	}
+	pinned := func(n int) []Point {
+		out := append([]Point(nil), calm...)
+		for i := 0; i < n; i++ {
+			out = append(out, Point{CPU: 100})
+		}
+		return out
+	}
+	in.Recent = pinned(1) // one 3-second blip
+	if h := buildHealth(in); h.Level != HealthSmooth {
+		t.Errorf("a 3 s blip must not change the verdict: %+v", h)
+	}
+	in.Recent = pinned(5) // 15 s at 100% after minutes of calm
+	h := buildHealth(in)
+	if h.Bottleneck != "cpu" || h.Level == HealthSmooth {
+		t.Errorf("15 s at 100%% must show even after a calm stretch: %+v", h)
+	}
+}
+
 func TestHealthOneFailingFactorCapsScore(t *testing.T) {
 	in := healthy()
 	in.Overview.Disks[0].Percent = 99

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 )
 
 // Health levels, best to worst.
@@ -35,6 +36,9 @@ type Health struct {
 	Factors    []HealthFactor `json:"factors"`
 }
 
+// cpuBurstSamples is how many samples make up the last 15 seconds.
+const cpuBurstSamples = int(15 * time.Second / sampleInterval)
+
 // lowerBetter maps v to 100 at or below good and 0 at or above bad, linearly between.
 func lowerBetter(v, good, bad float64) float64 {
 	if v <= good {
@@ -61,8 +65,14 @@ func buildHealth(in insightInput) Health {
 	cpu := o.CPU
 	if len(in.Recent) >= 3 { // sustained use matters, one spike does not
 		cpu = avg(in.Recent, func(p Point) float64 { return p.CPU })
+		// ...but a spike that lasts is felt at once, so the last 15 seconds count too: the worse of the two wins.
+		recent := in.Recent
+		if len(recent) > cpuBurstSamples {
+			recent = recent[len(recent)-cpuBurstSamples:]
+		}
+		cpu = math.Max(cpu, avg(recent, func(p Point) float64 { return p.CPU }))
 	}
-	add("cpu", "CPU", fmt.Sprintf("%.0f%%", cpu), cpu, lowerBetter(cpu, 60, 100), 25, "Average of the last minutes. Fine below 60%, saturated at 100%")
+	add("cpu", "CPU", fmt.Sprintf("%.0f%%", cpu), cpu, lowerBetter(cpu, 60, 100), 25, "Worse of the last few minutes and the last 15 seconds. Fine below 60%, saturated at 100%")
 
 	cores := float64(o.CPUCores)
 	if cores < 1 {

@@ -25,6 +25,15 @@ describe('computeHealth', () => {
     expect(h.level).not.toBe('smooth')
   })
 
+  it('sees CPU pinned for the last 15 seconds even after minutes of calm', () => {
+    const calm = Array.from({ length: 95 }, () => ({ cpu: 5 }))
+    const pinned = (n) => [...calm, ...Array.from({ length: n }, () => ({ cpu: 100 }))]
+    expect(computeHealth(idle, pinned(1), undefined).level).toBe('smooth') // a 3 s blip is ignored
+    const h = computeHealth(idle, pinned(5), undefined) // 5 samples x 3 s = 15 s
+    expect(h.bottleneck).toBe('cpu')
+    expect(h.level).not.toBe('smooth')
+  })
+
   it('caps the score when one factor fails and keeps server-side factors', () => {
     const server = { factors: [{ id: 'services', label: 'Services', value: '0 of 2 running', used: 100, score: 0, weight: 10, hint: '' }] }
     const h = computeHealth({ ...idle, disks: [{ mount: '/', percent: 99 }] }, [], server)

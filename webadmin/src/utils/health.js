@@ -5,6 +5,7 @@
 
 import { formatBytes } from './format'
 
+const CPU_BURST_SAMPLES = 5 // 15 s of 3 s samples; keep in sync with cpuBurstSamples in health.go
 const lowerBetter = (v, good, bad) => (v <= good ? 100 : v >= bad ? 0 : (100 * (bad - v)) / (bad - good))
 const clamp = (v) => Math.max(0, Math.min(100, v))
 
@@ -22,8 +23,11 @@ export function computeHealth(o, recent = [], server) {
   const add = (id, label, value, used, score, weight, hint) =>
     factors.push({ id, label, value, used: Math.round(clamp(used)), score: Math.round(score), weight, hint })
 
-  const cpu = recent.length >= 3 ? recent.reduce((s, p) => s + p.cpu, 0) / recent.length : o.cpu_percent
-  add('cpu', 'CPU', `${cpu.toFixed(0)}%`, cpu, lowerBetter(cpu, 60, 100), 25, 'Average of the last minutes. Fine below 60%, saturated at 100%')
+  // Sustained use matters, one spike does not; but a spike that lasts is felt at once, so the last 15 seconds
+  // (5 samples, 3 s apart) count too and the worse of the two wins.
+  const mean = (pts) => pts.reduce((s, p) => s + p.cpu, 0) / pts.length
+  const cpu = recent.length >= 3 ? Math.max(mean(recent), mean(recent.slice(-CPU_BURST_SAMPLES))) : o.cpu_percent
+  add('cpu', 'CPU', `${cpu.toFixed(0)}%`, cpu, lowerBetter(cpu, 60, 100), 25, 'Worse of the last few minutes and the last 15 seconds. Fine below 60%, saturated at 100%')
 
   const perCore = o.load5 / Math.max(1, o.cpu_cores || 1)
   add('load', 'Load', `${perCore.toFixed(2)} / core`, perCore * 100, lowerBetter(perCore, 0.7, 2), 20, '5-minute load per core. Fine below 0.7, tasks queue up beyond 1.0, bad at 2.0')
