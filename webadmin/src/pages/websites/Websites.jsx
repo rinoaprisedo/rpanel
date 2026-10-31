@@ -108,6 +108,18 @@ function Websites() {
     return !q.trim() || s.domain.includes(q.trim().toLowerCase())
   })
 
+  // Running first, stopped below under their own heading. Inside a group: production before staging/dev/test,
+  // then by root domain so the sites of one project sit together, then by name.
+  const groups = useMemo(() => {
+    const envRank = (d) => (/^(staging|stage|dev|test|uat|demo)[.-]/.test(d) || /^[^.]+[.-](staging|dev|test)\./.test(d) ? 1 : 0)
+    const root = (d) => d.split('.').slice(-2).join('.')
+    const sort = (a, b) => root(a.domain).localeCompare(root(b.domain)) || envRank(a.domain) - envRank(b.domain) || a.domain.localeCompare(b.domain)
+    const up = shown.filter((x) => x.status === 'running').sort(sort)
+    const down = shown.filter((x) => x.status !== 'running').sort(sort)
+    if (!up.length || !down.length) return [{ key: 'all', title: null, sites: up.length ? up : down }]
+    return [{ key: 'running', title: 'Running', sites: up }, { key: 'stopped', title: 'Stopped', sites: down }]
+  }, [shown])
+
   const Chip = ({ ok, children }) => (
     <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
       {ok ? <CircleCheck size={13} className="text-success" /> : <CircleX size={13} className="text-danger" />}{children}
@@ -173,16 +185,28 @@ function Websites() {
       ) : shown.length === 0 ? (
         <p className="rounded-lg border border-surface-border bg-surface-card py-12 text-center text-sm text-text-secondary">No website matches your filter.</p>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {shown.map((s) => (
-            <SiteCard
-              key={s.uuid} site={s} stats={statsBy[s.domain]} daysLeft={s.ssl_enabled ? daysBy[s.domain] : null} busy={toggle.isPending}
-              onManage={() => setManage({ uuid: s.uuid, tab: 'Config' })}
-              onToggle={() => toggle.mutate(s)}
-              onLogs={() => openLogs(s, 'error')}
-              onDelete={() => { setDeleteFiles(false); setDel(s) }}
-              onFiles={() => navigate('/file-manager')}
-            />
+        <div className="space-y-6">
+          {groups.map((g) => (
+            <section key={g.key}>
+              {g.title && (
+                <h2 className={cn('mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[.08em]', g.key === 'stopped' ? 'text-danger' : 'text-text-secondary')}>
+                  <span className={cn('h-2 w-2 rounded-full', g.key === 'stopped' ? 'bg-danger' : 'bg-success')} />{g.title}
+                  <span className="rounded-full bg-surface-hover px-1.5 py-px text-[11px] font-medium normal-case tracking-normal text-text-secondary">{g.sites.length}</span>
+                </h2>
+              )}
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {g.sites.map((s) => (
+                  <SiteCard
+                    key={s.uuid} site={s} stats={statsBy[s.domain]} daysLeft={s.ssl_enabled ? daysBy[s.domain] : null} busy={toggle.isPending}
+                    onManage={() => setManage({ uuid: s.uuid, tab: 'Config' })}
+                    onToggle={() => toggle.mutate(s)}
+                    onLogs={() => openLogs(s, 'error')}
+                    onDelete={() => { setDeleteFiles(false); setDel(s) }}
+                    onFiles={() => navigate('/file-manager')}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}

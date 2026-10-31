@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ExternalLink, Settings2, Play, Square, ScrollText, Trash2, MoreHorizontal, Lock, LockOpen, FileCode2, Globe, ArrowLeftRight, FolderOpen, Waypoints } from 'lucide-react'
+import { CirclePause, ExternalLink, Settings2, Play, Square, ScrollText, Trash2, MoreHorizontal, Lock, LockOpen, FileCode2, Globe, ArrowLeftRight, FolderOpen, Waypoints } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { compact } from '../../components/charts/scale'
 
@@ -47,18 +47,19 @@ function SiteCard({ site: s, stats, daysLeft, busy, onManage, onToggle, onLogs, 
   const errRate = stats?.requests ? (stats.server_err / stats.requests) * 100 : 0
 
   return (
-    <article className={cn('group relative flex flex-col rounded-lg border bg-surface-card p-4 shadow-card transition-shadow hover:shadow-md', running ? 'border-surface-border' : 'border-surface-border opacity-75')}>
+    <article className={cn('group relative flex flex-col rounded-lg border bg-surface-card p-4 shadow-card transition-shadow hover:shadow-md', running ? 'border-surface-border' : 'border-danger/50 bg-danger/[0.04]')}>
+      {!running && <span className="absolute inset-y-3 left-0 w-1 rounded-r bg-danger" aria-hidden />}
       <div className="flex items-start gap-3">
         <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-base font-bold uppercase" style={{ backgroundColor: `${T.color}22`, color: T.color }}>
           {s.domain.replace(/^www\./, '').charAt(0)}
-          <span className={cn('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface-card', running ? 'bg-success' : 'bg-text-tertiary')} title={running ? 'Running' : 'Stopped'} />
+          <span className={cn('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface-card', running ? 'bg-success' : 'bg-danger')} title={running ? 'Running' : 'Stopped'} />
         </div>
         <div className="min-w-0 flex-1">
           <button onClick={onManage} className="block max-w-full truncate text-left text-[15px] font-semibold text-text-primary hover:text-primary">{s.domain}</button>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-tertiary">
             <span className="inline-flex items-center gap-1"><T.icon size={12} />{T.label}{s.php_version ? ` ${s.php_version}` : ''}</span>
             {s.proxy_rules?.length > 0 && <span className="inline-flex items-center gap-1" title="Reverse proxy rules"><Waypoints size={12} />{s.proxy_rules.length} proxy</span>}
-            {!running && <span className="rounded bg-surface-hover px-1.5 py-px font-medium text-text-secondary">Stopped</span>}
+            {!running && <span className="inline-flex items-center gap-1 rounded bg-danger px-1.5 py-px font-semibold uppercase tracking-wide text-white"><CirclePause size={11} />Stopped</span>}
           </div>
         </div>
         <div className="relative">
