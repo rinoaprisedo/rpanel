@@ -146,6 +146,26 @@ function SSLTab({ site, onChanged }) {
 // ---------------------------------------------------------------- Reverse proxy
 const emptyRule = { name: '', path: '/api/', target: 'http://127.0.0.1:3000', pass_host: true, enabled: true }
 
+function TargetEditor({ site, onChanged }) {
+  const [target, setTarget] = useState(site.proxy_target || '')
+  useEffect(() => { setTarget(site.proxy_target || '') }, [site.proxy_target])
+  const save = useMutation({
+    mutationFn: () => api.updateWebsite(site.uuid, { proxy_target: target.trim() }),
+    onSuccess: () => { toast.success('Target updated and nginx reloaded'); onChanged() },
+    onError: (e) => toast.error(errMsg(e), { duration: 8000 }),
+  })
+  const dirty = target.trim() !== (site.proxy_target || '')
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); if (dirty) save.mutate() }} className="space-y-2 rounded-md bg-surface-hover p-3">
+      <p className="text-xs text-text-secondary">This site is a reverse proxy itself: everything not matched by a rule below goes to this target.</p>
+      <div className="flex items-end gap-2">
+        <div className="flex-1"><Input label="Proxy target" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="http://127.0.0.1:3000" /></div>
+        <Button type="submit" disabled={!dirty || !target.trim() || save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</Button>
+      </div>
+    </form>
+  )
+}
+
 function ProxyTab({ site, onChanged }) {
   const rules = site.proxy_rules || []
   const [form, setForm] = useState(null) // { index: number | null, rule }
@@ -168,9 +188,7 @@ function ProxyTab({ site, onChanged }) {
       <p className="text-sm text-text-secondary">
         Forward part of <b className="text-text-primary">{site.domain}</b> to another service, e.g. <code className="font-mono text-xs">/api/</code> → a Node or Docker app. The rest of the site keeps working as before.
       </p>
-      {site.type === 'proxy' && (
-        <p className="rounded-md bg-surface-hover p-3 text-xs text-text-secondary">This site is a reverse proxy itself: everything not matched below goes to <span className="font-mono text-text-primary">{site.proxy_target}</span>.</p>
-      )}
+      {site.type === 'proxy' && <TargetEditor site={site} onChanged={onChanged} />}
 
       <div className="overflow-hidden rounded-lg border border-surface-border">
         {rules.length === 0 ? (
