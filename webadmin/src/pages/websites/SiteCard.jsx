@@ -42,7 +42,7 @@ function SiteCard({ site: s, stats, daysLeft, busy, onManage, onToggle, onLogs, 
   const T = TYPES[s.type] || TYPES.static
   const running = s.status === 'running'
   const target = s.type === 'proxy' ? s.proxy_target : s.root_dir
-  const certTone = daysLeft == null ? '' : daysLeft < 7 ? 'text-danger' : daysLeft < 14 ? 'text-warning' : ''
+  const certTone = !s.ssl_enabled ? 'text-danger' : daysLeft == null ? '' : daysLeft <= 5 ? 'text-danger' : daysLeft < 14 ? 'text-warning' : ''
   const url = `${s.ssl_enabled ? 'https' : 'http'}://${s.domain}`
   const errRate = stats?.requests ? (stats.server_err / stats.requests) * 100 : 0
 
@@ -81,7 +81,7 @@ function SiteCard({ site: s, stats, daysLeft, busy, onManage, onToggle, onLogs, 
         <Stat label="Errors 5xx" value={stats ? (stats.server_err ? `${stats.server_err} · ${errRate.toFixed(1)}%` : '0') : '—'} tone={stats?.server_err ? 'text-danger' : ''} />
         <Stat
           label="HTTPS"
-          value={<span className={cn('inline-flex items-center gap-1', certTone)}>{s.ssl_enabled ? <Lock size={12} /> : <LockOpen size={12} className="text-text-tertiary" />}{s.ssl_enabled ? (daysLeft == null ? 'On' : daysLeft < 0 ? 'Expired' : `${daysLeft}d`) : 'Off'}</span>}
+          value={<span className={cn('inline-flex items-center gap-1', certTone)}>{s.ssl_enabled ? <Lock size={12} /> : <LockOpen size={12} />}{s.ssl_enabled ? (daysLeft == null ? 'On' : daysLeft < 0 ? 'Expired' : `${daysLeft}d`) : 'Off'}</span>}
         />
       </div>
 

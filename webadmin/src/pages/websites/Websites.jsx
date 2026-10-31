@@ -233,7 +233,10 @@ function Websites() {
       <SslProgress
         target={sslJob}
         onClose={() => { setSslJob(null); refresh() }}
-        onFinished={() => refresh()}
+        onFinished={(p) => {
+          refresh()
+          if (p?.state === 'failed') toast('Website saved without HTTPS. Enable it later from Manage → SSL.', { icon: 'ℹ️', duration: 6000 })
+        }}
         onRetry={() => { const t = sslJob; setSslJob(null); if (t) startSsl({ uuid: t.uuid, domain: t.domain }) }}
       />
 

@@ -73,9 +73,9 @@ function SslProgress({ target, onClose, onFinished, onRetry }) {
 
         {failed && (
           <div className="rounded-lg border border-danger/30 bg-danger-bg p-3 text-sm text-danger">
-            <p className="mb-1 font-medium">The certificate could not be issued. The site keeps working over HTTP.</p>
+            <p className="mb-1 font-medium">HTTPS could not be enabled, but the website is saved and works over HTTP.</p>
             <pre className="whitespace-pre-wrap break-words font-mono text-xs">{p.error}</pre>
-            <p className="mt-2 text-xs text-text-secondary">Check that the domain&apos;s A record points at this server and that port 80 is open, then try again.</p>
+            <p className="mt-2 text-xs text-text-secondary">Check that the domain&apos;s A record points at this server and that port 80 is open, then try again. You can also enable HTTPS later from Manage → SSL.</p>
           </div>
         )}
         {done && (
@@ -93,7 +93,7 @@ function SslProgress({ target, onClose, onFinished, onRetry }) {
 
         <div className="flex justify-end gap-2">
           {failed && onRetry && <Button variant="secondary" onClick={onRetry}>Try again</Button>}
-          <Button onClick={onClose} disabled={running}>{running ? 'Working…' : done ? 'Done' : 'Close'}</Button>
+          <Button onClick={onClose} disabled={running}>{running ? 'Working…' : done ? 'Done' : failed ? 'Continue without HTTPS' : 'Close'}</Button>
         </div>
       </div>
     </Modal>

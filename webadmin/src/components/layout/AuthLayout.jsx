@@ -25,14 +25,11 @@ function AuthLayout() {
       <div className="auth-glow -bottom-40 -right-20 h-[26rem] w-[26rem] bg-primary/25" style={{ animationDelay: '-6s' }} />
       <NetworkBackground />
 
-      <header className="absolute left-0 top-0 z-10 flex items-center gap-3 p-4 sm:p-6">
-        <img src={logo || logoLandscape} alt={appName} className="h-14 w-auto object-contain sm:h-16" />
-      </header>
-
       <div className="relative z-10 flex min-h-screen items-center justify-center px-4 py-24">
         <div className="w-full max-w-sm">
           <div className="auth-card relative rounded-2xl p-8 sm:p-10">
-            <div className="mb-6 flex flex-col items-center">
+            <div className="mb-6 flex flex-col items-center gap-4">
+              <img src={logo || logoLandscape} alt={appName} className="h-14 w-auto max-w-full object-contain" />
               <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.2em] text-emerald-400">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> secure access
               </div>
