@@ -153,7 +153,7 @@ func (c *Collector) Start(ctx context.Context) {
 func (c *Collector) sample(ctx context.Context) {
 	o := Overview{}
 	if h, err := host.InfoWithContext(ctx); err == nil {
-		o.Hostname, o.OS, o.Kernel, o.Arch, o.Uptime = h.Hostname, h.Platform+" "+h.PlatformVersion, h.KernelVersion, h.KernelArch, h.Uptime
+		o.Hostname, o.OS, o.Kernel, o.Arch, o.Uptime = h.Hostname, h.Platform+" "+fullOSVersion(h.PlatformVersion), h.KernelVersion, h.KernelArch, h.Uptime
 	}
 	if infos, err := cpu.InfoWithContext(ctx); err == nil && len(infos) > 0 {
 		o.CPUModel = infos[0].ModelName
@@ -400,4 +400,27 @@ func readTCPStates(paths ...string) TCPStates {
 		f.Close()
 	}
 	return t
+}
+
+var osPointRe = regexp.MustCompile(`^\d+(\.\d+)+`)
+
+// fullOSVersion returns the point release (Ubuntu "26.04.1") when /etc/os-release has it in VERSION;
+// VERSION_ID, which is all gopsutil reports, stops at "26.04". Falls back to the given version.
+func fullOSVersion(fallback string) string {
+	b, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return fallback
+	}
+	return parseOSVersion(string(b), fallback)
+}
+
+func parseOSVersion(osRelease, fallback string) string {
+	for _, line := range strings.Split(osRelease, "\n") {
+		if v, ok := strings.CutPrefix(line, "VERSION="); ok {
+			if m := osPointRe.FindString(strings.Trim(v, `"'`)); strings.HasPrefix(m, fallback) && len(m) > len(fallback) {
+				return m
+			}
+		}
+	}
+	return fallback
 }
