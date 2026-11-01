@@ -40,6 +40,7 @@ type SSLJob struct {
 	steps    []SSLStep
 	log      []string
 	errMsg   string
+	retry    *time.Time
 	started  time.Time
 	finished time.Time
 }
@@ -52,7 +53,9 @@ type SSLProgress struct {
 	Steps   []SSLStep `json:"steps"`
 	Log     []string  `json:"log"`
 	Error   string    `json:"error,omitempty"`
-	Elapsed int       `json:"elapsed_seconds"`
+	// RetryAfter is set when Let's Encrypt rate-limited the domain: do not try again before then.
+	RetryAfter *time.Time `json:"retry_after,omitempty"`
+	Elapsed    int        `json:"elapsed_seconds"`
 }
 
 func newSSLJob(w *Website) *SSLJob {
@@ -76,7 +79,7 @@ func (j *SSLJob) snapshot() *SSLProgress {
 	}
 	return &SSLProgress{
 		Domain: j.Domain, State: j.state, Percent: j.percent, Steps: append([]SSLStep(nil), j.steps...),
-		Log: append([]string(nil), j.log...), Error: j.errMsg, Elapsed: int(end.Sub(j.started).Seconds()),
+		Log: append([]string(nil), j.log...), Error: j.errMsg, RetryAfter: j.retry, Elapsed: int(end.Sub(j.started).Seconds()),
 	}
 }
 
@@ -251,8 +254,11 @@ func (s *Service) issueWithProgress(ctx context.Context, j *SSLJob, w *Website, 
 		}
 	}
 	if err != nil {
-		msg := "certbot failed: " + lastLines(res.Stdout+"\n"+res.Stderr, 6)
-		if dnsHint != "" {
+		msg, retry := summarizeCertbotFailure(res.Stdout + "\n" + res.Stderr)
+		j.mu.Lock()
+		j.retry = retry
+		j.mu.Unlock()
+		if dnsHint != "" && retry == nil {
 			msg += "\n" + dnsHint
 		}
 		j.step("certificate", StepFailed, "Let's Encrypt refused the request", 30)

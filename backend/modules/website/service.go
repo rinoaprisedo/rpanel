@@ -250,7 +250,8 @@ func (s *Service) IssueSSL(ctx context.Context, uuid, email string, actor *uint6
 	}
 	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", s.certbotArgs(w.Domain, reg)...)
 	if err != nil {
-		return nil, fmt.Errorf("certbot failed: %s", lastLines(res.Stdout+"\n"+res.Stderr, 6))
+		msg, _ := summarizeCertbotFailure(res.Stdout + "\n" + res.Stderr)
+		return nil, errors.New(msg)
 	}
 	prev := *w
 	w.SSLEnabled, w.UpdatedBy = true, actor

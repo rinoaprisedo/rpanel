@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Check, LoaderCircle, TriangleAlert, X, Circle, Lock } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
@@ -16,6 +16,19 @@ function StepIcon({ status }) {
 
 // Live progress of a Let's Encrypt request: bar, steps and the certbot log.
 // `target` is { uuid, domain } or null; onFinished fires once when the job ends (either way).
+function useCountdown(until) {
+  const [now, setNow] = useState(Date.now())
+  const end = until ? new Date(until).getTime() : 0
+  useEffect(() => {
+    if (!end || Date.now() >= end) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [end])
+  return end ? Math.max(0, Math.ceil((end - now) / 1000)) : 0
+}
+
+const fmtWait = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}m ${String(sec % 60).padStart(2, '0')}s` : `${sec}s`)
+
 function SslProgress({ target, onClose, onFinished, onRetry }) {
   const uuid = target?.uuid
   const { data } = useQuery({
@@ -37,6 +50,7 @@ function SslProgress({ target, onClose, onFinished, onRetry }) {
   }, [p, uuid, onFinished])
   useEffect(() => { if (!uuid) notified.current = null }, [uuid])
 
+  const wait = useCountdown(p?.retry_after)
   const percent = p?.percent ?? 0
   const failed = p?.state === 'failed'
   const done = p?.state === 'done'
@@ -92,7 +106,7 @@ function SslProgress({ target, onClose, onFinished, onRetry }) {
         </details>
 
         <div className="flex justify-end gap-2">
-          {failed && onRetry && <Button variant="secondary" onClick={onRetry}>Try again</Button>}
+          {failed && onRetry && <Button variant="secondary" onClick={onRetry} disabled={wait > 0}>{wait > 0 ? `Try again in ${fmtWait(wait)}` : 'Try again'}</Button>}
           <Button onClick={onClose} disabled={running}>{running ? 'Working…' : done ? 'Done' : failed ? 'Continue without HTTPS' : 'Close'}</Button>
         </div>
       </div>
