@@ -196,7 +196,11 @@ func (s *Service) issueWithProgress(ctx context.Context, j *SSLJob, w *Website, 
 	case hint != "":
 		dnsHint = hint
 		j.logf("WARNING: %s", hint)
-		j.step("dns", StepWarn, "Does not point at this server", 10)
+		if panelssl.IsCloudflare(ips) {
+			j.step("dns", StepWarn, "Behind the Cloudflare proxy: set the record to DNS only", 10)
+		} else {
+			j.step("dns", StepWarn, "Does not point at this server", 10)
+		}
 	default:
 		j.logf("%s -> %s", w.Domain, strings.Join(ips, ", "))
 		j.step("dns", StepDone, strings.Join(ips, ", "), 10)

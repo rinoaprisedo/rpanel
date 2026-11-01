@@ -226,3 +226,12 @@ func TestIssueWithoutEmail(t *testing.T) {
 		t.Errorf("expected an anonymous registration, got %v", args)
 	}
 }
+
+func TestIsCloudflare(t *testing.T) {
+	if !IsCloudflare([]string{"104.21.15.113", "172.67.205.233", "2606:4700:3030::6815:f71"}) {
+		t.Error("Cloudflare addresses not detected")
+	}
+	if IsCloudflare([]string{"104.21.15.113", "128.199.110.228"}) || IsCloudflare(nil) || IsCloudflare([]string{"8.8.8.8"}) {
+		t.Error("non-Cloudflare addresses detected as Cloudflare")
+	}
+}
