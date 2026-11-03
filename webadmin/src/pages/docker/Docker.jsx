@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Play, Square, RotateCw, Trash2, ScrollText, Download, FileCode2, ArrowUpFromLine, ArrowDownToLine, Search, RefreshCw, ChevronDown, ChevronUp, Boxes, LayoutList, Layers, Globe, Database, Library, Monitor } from 'lucide-react'
+import { Plus, Play, Square, RotateCw, Trash2, ScrollText, Download, FileCode2, ArrowUpFromLine, ArrowDownToLine, Search, RefreshCw, Loader2, ChevronDown, ChevronUp, Boxes, LayoutList, Layers, Globe, Database, Library, Monitor } from 'lucide-react'
 import Tabs from '../../components/ui/Tabs'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -15,6 +15,8 @@ import * as api from '../../api/docker'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
 const tabs = ['Overview', 'Containers', 'Images', 'Compose']
+const ACTION_LABEL = { start: 'Starting…', stop: 'Stopping…', restart: 'Restarting…', remove: 'Removing…' }
+const ACTION_DONE = { start: 'Container started', stop: 'Container stopped', restart: 'Container restarted' }
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean)
 const emptyRun = { image: '', name: '', ports: '', env: '', volumes: '', restart: 'unless-stopped' }
 const sampleCompose = 'services:\n  web:\n    image: nginx:latest\n    ports:\n      - "8080:80"\n    restart: unless-stopped\n'
@@ -41,10 +43,15 @@ function Docker() {
   const [confirm, setConfirm] = useState(null)
   const [output, setOutput] = useState(null) // { title, text }
 
-  const inv = (...k) => k.forEach((x) => qc.invalidateQueries({ queryKey: [x] }))
-  const m = (fn, ok, after) => ({ mutationFn: fn, onSuccess: (r) => { if (ok) toast.success(ok); after?.(r) }, onError: (e) => toast.error(errMsg(e)) })
+  // Returns a promise so a mutation stays pending until the refreshed list has arrived.
+  const inv = (...k) => Promise.all(k.map((x) => qc.invalidateQueries({ queryKey: [x] })))
+  const m = (fn, ok, after) => ({ mutationFn: fn, onSuccess: (r) => { if (ok) toast.success(ok); return after?.(r) }, onError: (e) => toast.error(errMsg(e)) })
   const install = useMutation(m(api.installDocker, 'Docker installed', () => inv('docker-status')))
-  const act = useMutation(m(({ id, action }) => api.containerAction(id, action), 'Done', () => inv('d-containers')))
+  const act = useMutation({
+    mutationFn: ({ id, action }) => api.containerAction(id, action),
+    onSuccess: (_, v) => { toast.success(ACTION_DONE[v.action] || 'Done'); return inv('d-containers') },
+    onError: (e) => toast.error(errMsg(e)),
+  })
   const run = useMutation(m((d) => api.runContainer(d), 'Container started', () => { setRunForm(null); inv('d-containers', 'd-images') }))
   const pull = useMutation(m((r) => api.pullImage(r), 'Image pulled', () => { setPullRef(null); inv('d-images') }))
   const save = useMutation(m(({ name, content, isNew }) => (isNew ? api.createProject(name, content) : api.updateProject(name, content)), 'Saved', () => { setEditor(null); inv('d-projects') }))
@@ -53,7 +60,13 @@ function Docker() {
     onSuccess: (r, v) => { setOutput({ title: `${v.name}: ${v.op}`, text: r.data.output || '(no output)' }); inv('d-containers') },
     onError: (e) => toast.error(errMsg(e)),
   })
-  const doConfirm = useMutation(m(() => confirm.run(), 'Done', () => { setConfirm(null); inv('d-containers', 'd-images', 'd-projects') }))
+  const doConfirm = useMutation(m(() => confirm.run(), 'Done', async () => { await inv('d-containers', 'd-images', 'd-projects'); setConfirm(null) }))
+  // Which action is running for this container right now (null when idle).
+  const busyOf = (c) => {
+    if (act.isPending && act.variables?.id === c.id) return act.variables.action
+    if (doConfirm.isPending && confirm?.cid === c.id) return 'remove'
+    return null
+  }
 
   const showLogs = async (title, fetcher) => {
     const reload = async () => {
@@ -91,7 +104,7 @@ function Docker() {
       </div>
       <Tabs tabs={tabs} value={tab} onChange={changeTab} />
 
-      {tab === 'Overview' && <Overview overview={overview} containers={containers} stats={stats} act={act} showLogs={showLogs} setConfirm={setConfirm} refetch={() => { containers.refetch(); overview.refetch(); stats.refetch() }} />}
+      {tab === 'Overview' && <Overview overview={overview} containers={containers} stats={stats} busyOf={busyOf} act={act} showLogs={showLogs} setConfirm={setConfirm} refetch={() => { containers.refetch(); overview.refetch(); stats.refetch() }} />}
 
       {tab === 'Containers' && (
         <Table query={containers} search={search} onSearch={setSearch} placeholder="Search container or image…" action={<Button onClick={() => setRunForm(emptyRun)}><Plus size={14} />Run container</Button>}
@@ -99,14 +112,7 @@ function Docker() {
           rows={match(containers.data?.data, search, (c) => `${c.name} ${c.image} ${c.state} ${c.ports}`).map((c) => [
             <span key="n" className="font-medium">{c.name}</span>, <span key="i" className="font-mono text-xs">{c.image}</span>,
             <span key="s" title={c.status}>{stateBadge(c.state)}</span>, <span key="p" className="text-xs text-text-secondary">{c.ports}</span>,
-            <div key="a" className="flex justify-end gap-1">
-              {c.state === 'running'
-                ? <><Button variant="ghost" title="Stop" onClick={() => act.mutate({ id: c.id, action: 'stop' })}><Square size={14} /></Button>
-                    <Button variant="ghost" title="Restart" onClick={() => act.mutate({ id: c.id, action: 'restart' })}><RotateCw size={14} /></Button></>
-                : <Button variant="ghost" title="Start" onClick={() => act.mutate({ id: c.id, action: 'start' })}><Play size={14} /></Button>}
-              <Button variant="ghost" title="Logs" onClick={() => showLogs(c.name, () => api.getContainerLogs(c.id))}><ScrollText size={14} /></Button>
-              <Button variant="ghost" title="Remove" onClick={() => setConfirm({ title: `Remove ${c.name}`, message: 'The container is force-removed. Data in anonymous volumes is lost.', run: () => api.removeContainer(c.id) })}><Trash2 size={14} className="text-danger" /></Button>
-            </div>,
+            <ContainerActions key="a" c={c} busy={busyOf(c)} act={act} showLogs={showLogs} setConfirm={setConfirm} />,
           ])} />
       )}
 
@@ -202,6 +208,21 @@ function Docker() {
   )
 }
 
+function ContainerActions({ c, busy, act, showLogs, setConfirm }) {
+  const running = c.state === 'running'
+  const spin = (a, icon) => (busy === a ? <Loader2 size={14} className="animate-spin" /> : icon)
+  return (
+    <div className="flex justify-end gap-1">
+      {running
+        ? <><Button variant="ghost" title="Stop" aria-label={`Stop ${c.name}`} disabled={!!busy} onClick={() => act.mutate({ id: c.id, action: 'stop' })}>{spin('stop', <Square size={14} />)}</Button>
+            <Button variant="ghost" title="Restart" aria-label={`Restart ${c.name}`} disabled={!!busy} onClick={() => act.mutate({ id: c.id, action: 'restart' })}>{spin('restart', <RotateCw size={14} />)}</Button></>
+        : <Button variant="ghost" title="Start" aria-label={`Start ${c.name}`} disabled={!!busy} onClick={() => act.mutate({ id: c.id, action: 'start' })}>{spin('start', <Play size={14} />)}</Button>}
+      <Button variant="ghost" title="Logs" aria-label={`Logs of ${c.name}`} onClick={() => showLogs(c.name, () => api.getContainerLogs(c.id))}><ScrollText size={14} /></Button>
+      <Button variant="ghost" title="Remove" aria-label={`Remove ${c.name}`} disabled={!!busy} onClick={() => setConfirm({ cid: c.id, title: `Remove ${c.name}`, message: 'The container is force-removed. Data in anonymous volumes is lost.', run: () => api.removeContainer(c.id) })}>{spin('remove', <Trash2 size={14} className="text-danger" />)}</Button>
+    </div>
+  )
+}
+
 function Area({ label, value, onChange, placeholder }) {
   return (
     <div className="flex flex-col gap-1">
@@ -274,7 +295,7 @@ function Meter({ label, value, text, tone }) {
   )
 }
 
-function Overview({ overview, containers, stats, refetch, act, showLogs, setConfirm }) {
+function Overview({ overview, containers, stats, refetch, act, busyOf, showLogs, setConfirm }) {
   const [open, setOpen] = useState(true)
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
@@ -334,6 +355,7 @@ function Overview({ overview, containers, stats, refetch, act, showLogs, setConf
             {list.map((c) => {
               const running = c.state === 'running'
               const st = statBy[c.name]
+              const busy = busyOf(c)
               return (
                 <article key={c.id} className="group relative rounded-lg border border-surface-border bg-surface-bg/40 transition-colors hover:border-surface-border-hover">
                   <header className="flex items-start gap-3 border-b border-surface-border p-3.5">
@@ -345,13 +367,13 @@ function Overview({ overview, containers, stats, refetch, act, showLogs, setConf
                     </div>
                     <span className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', running ? 'bg-success' : c.state === 'paused' ? 'bg-warning' : 'bg-text-tertiary')} title={c.status} />
                   </header>
+                  {busy && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 rounded-lg bg-surface-card/80 text-sm font-medium text-text-primary backdrop-blur-[1px]" role="status" aria-live="polite">
+                      <Loader2 size={16} className="animate-spin text-primary" />{ACTION_LABEL[busy]}
+                    </div>
+                  )}
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 rounded-b-lg border-t border-surface-border bg-surface-card/95 px-2 py-1.5 opacity-0 backdrop-blur transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                    {running
-                      ? <><Button variant="ghost" title="Stop" aria-label={`Stop ${c.name}`} disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'stop' })}><Square size={14} /></Button>
-                          <Button variant="ghost" title="Restart" aria-label={`Restart ${c.name}`} disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'restart' })}><RotateCw size={14} /></Button></>
-                      : <Button variant="ghost" title="Start" aria-label={`Start ${c.name}`} disabled={act.isPending} onClick={() => act.mutate({ id: c.id, action: 'start' })}><Play size={14} /></Button>}
-                    <Button variant="ghost" title="Logs" aria-label={`Logs of ${c.name}`} onClick={() => showLogs(c.name, () => api.getContainerLogs(c.id))}><ScrollText size={14} /></Button>
-                    <Button variant="ghost" title="Remove" aria-label={`Remove ${c.name}`} onClick={() => setConfirm({ title: `Remove ${c.name}`, message: 'The container is force-removed. Data in anonymous volumes is lost.', run: () => api.removeContainer(c.id) })}><Trash2 size={14} className="text-danger" /></Button>
+                    <ContainerActions c={c} busy={busy} act={act} showLogs={showLogs} setConfirm={setConfirm} />
                   </div>
                   <div className="space-y-3 p-3.5">
                     {running ? (

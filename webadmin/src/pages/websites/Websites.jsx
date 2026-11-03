@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, Globe, FolderSearch, Search, X, CircleCheck, CircleX, Lock, TriangleAlert } from 'lucide-react'
+import { Plus, Globe, FolderSearch, Search, X, CircleCheck, CircleX, Lock, TriangleAlert, LayoutGrid, List } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
@@ -12,7 +12,7 @@ import Skeleton from '../../components/ui/Skeleton'
 import FolderPicker from './FolderPicker'
 import SiteManager from './SiteManager'
 import SslProgress from './SslProgress'
-import SiteCard, { TYPES } from './SiteCard'
+import SiteCard, { SiteRow, TYPES } from './SiteCard'
 import { cn } from '../../utils/cn'
 import { getTraffic, getInsights } from '../../api/dashboard'
 import * as api from '../../api/websites'
@@ -34,6 +34,8 @@ function Websites() {
   const daysBy = useMemo(() => Object.fromEntries((insRes?.data?.sites || []).map((x) => [x.domain, x.days_left])), [insRes])
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('all')
+  const [view, setViewState] = useState(() => (localStorage.getItem('websites-view') === 'list' ? 'list' : 'grid'))
+  const setView = (v) => { setViewState(v); localStorage.setItem('websites-view', v) }
 
   const [form, setForm] = useState(null)
   const [picking, setPicking] = useState(false)
@@ -169,6 +171,11 @@ function Websites() {
                 <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} className={cn('h-8 rounded-[8px] px-3 text-[13px] font-medium transition-colors', filter === k ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-hover')}>{label}</button>
               ))}
             </div>
+            <div className="ml-auto inline-flex rounded-md border border-surface-border bg-surface-card p-0.5" role="group" aria-label="View">
+              {[['grid', 'Grid view', LayoutGrid], ['list', 'List view', List]].map(([k, label, Icon]) => (
+                <button key={k} onClick={() => setView(k)} aria-pressed={view === k} aria-label={label} title={label} className={cn('flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors', view === k ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-hover')}><Icon size={15} /></button>
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -194,17 +201,20 @@ function Websites() {
                   <span className="rounded-full bg-surface-hover px-1.5 py-px text-[11px] font-medium normal-case tracking-normal text-text-secondary">{g.sites.length}</span>
                 </h2>
               )}
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {g.sites.map((s) => (
-                  <SiteCard
-                    key={s.uuid} site={s} stats={statsBy[s.domain]} daysLeft={s.ssl_enabled ? daysBy[s.domain] : null} busy={toggle.isPending}
-                    onManage={() => setManage({ uuid: s.uuid, tab: 'Config' })}
-                    onToggle={() => toggle.mutate(s)}
-                    onLogs={() => openLogs(s, 'error')}
-                    onDelete={() => { setDeleteFiles(false); setDel(s) }}
-                    onFiles={() => navigate('/file-manager')}
-                  />
-                ))}
+              <div className={view === 'list' ? 'space-y-2' : 'grid gap-3 md:grid-cols-2 xl:grid-cols-3'}>
+                {g.sites.map((s) => {
+                  const Item = view === 'list' ? SiteRow : SiteCard
+                  return (
+                    <Item
+                      key={s.uuid} site={s} stats={statsBy[s.domain]} daysLeft={s.ssl_enabled ? daysBy[s.domain] : null} busy={toggle.isPending}
+                      onManage={() => setManage({ uuid: s.uuid, tab: 'Config' })}
+                      onToggle={() => toggle.mutate(s)}
+                      onLogs={() => openLogs(s, 'error')}
+                      onDelete={() => { setDeleteFiles(false); setDel(s) }}
+                      onFiles={() => navigate('/file-manager')}
+                    />
+                  )
+                })}
               </div>
             </section>
           ))}

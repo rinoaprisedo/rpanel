@@ -99,4 +99,46 @@ function SiteCard({ site: s, stats, daysLeft, busy, onManage, onToggle, onLogs, 
   )
 }
 
+// Compact one-line version of SiteCard for the list view.
+export function SiteRow({ site: s, stats, daysLeft, busy, onManage, onToggle, onLogs, onDelete, onFiles }) {
+  const [menu, setMenu] = useState(false)
+  const T = TYPES[s.type] || TYPES.static
+  const running = s.status === 'running'
+  const target = s.type === 'proxy' ? s.proxy_target : s.root_dir
+  const certTone = !s.ssl_enabled ? 'text-danger' : daysLeft == null ? '' : daysLeft <= 5 ? 'text-danger' : daysLeft < 14 ? 'text-warning' : ''
+  const url = `${s.ssl_enabled ? 'https' : 'http'}://${s.domain}`
+
+  return (
+    <div className={cn('flex items-center gap-3 rounded-lg border bg-surface-card px-3.5 py-2.5 transition-shadow hover:shadow-md', running ? 'border-surface-border' : 'border-danger/50 bg-danger/[0.04]')}>
+      <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', running ? 'bg-success' : 'bg-danger')} title={running ? 'Running' : 'Stopped'} />
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: `${T.color}22`, color: T.color }} title={T.label}><T.icon size={15} /></span>
+      <div className="min-w-0 flex-1">
+        <button onClick={onManage} className="block max-w-full truncate text-left text-sm font-semibold text-text-primary hover:text-primary">{s.domain}</button>
+        <p className="truncate font-mono text-[11px] text-text-tertiary" title={target}>{T.label}{s.php_version ? ` ${s.php_version}` : ''} · {target || '—'}</p>
+      </div>
+      <div className="hidden w-24 shrink-0 md:block"><Stat label="Requests 24h" value={stats ? compact(stats.requests) : '—'} /></div>
+      <div className="hidden w-20 shrink-0 md:block"><Stat label="5xx" value={stats?.server_err ? String(stats.server_err) : stats ? '0' : '—'} tone={stats?.server_err ? 'text-danger' : ''} /></div>
+      <div className="hidden w-20 shrink-0 sm:block">
+        <Stat label="HTTPS" value={<span className={cn('inline-flex items-center gap-1', certTone)}>{s.ssl_enabled ? <Lock size={12} /> : <LockOpen size={12} />}{s.ssl_enabled ? (daysLeft == null ? 'On' : daysLeft < 0 ? 'Expired' : `${daysLeft}d`) : 'Off'}</span>} />
+      </div>
+      <a href={url} target="_blank" rel="noreferrer" aria-label={`Visit ${s.domain}`} title="Visit site" className="hidden rounded-md p-1.5 text-text-tertiary hover:bg-surface-hover hover:text-primary lg:block"><ExternalLink size={15} /></a>
+      <button onClick={onToggle} disabled={busy} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-surface-border px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50">
+        {running ? <><Square size={12} />Stop</> : <><Play size={12} />Start</>}
+      </button>
+      <button onClick={onManage} className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-white transition-opacity hover:opacity-90 sm:inline-flex"><Settings2 size={12} />Manage</button>
+      <div className="relative">
+        <button onClick={() => setMenu((v) => !v)} aria-label="More actions" className="rounded-md p-1.5 text-text-tertiary hover:bg-surface-hover hover:text-text-primary"><MoreHorizontal size={16} /></button>
+        {menu && (
+          <Menu onClose={() => setMenu(false)} items={[
+            { label: 'Manage', icon: Settings2, run: onManage },
+            ...(s.type !== 'proxy' ? [{ label: 'Open files', icon: FolderOpen, run: onFiles }] : []),
+            { label: 'View logs', icon: ScrollText, run: onLogs },
+            { label: 'Delete', icon: Trash2, danger: true, run: onDelete },
+          ]} />
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default SiteCard
