@@ -1,31 +1,35 @@
 import {
   Folder, FolderGit2, FolderLock, FolderCog, FolderArchive, FolderSymlink,
-  File, FileText, FileCode, FileJson, FileImage, FileArchive, FileAudio, FileVideo, FileSpreadsheet,
+  File, FileText, FileCode, FileJson, FileImage, FileAudio, FileVideo, FileSpreadsheet,
   FileKey, FileLock, FileTerminal, FileCog, FileSymlink, FileType, Database, ScrollText,
 } from 'lucide-react'
+import ArchiveIcon from '../components/icons/ArchiveIcon'
 
 // Icon + color + label per kind of entry, so the file list can be scanned by eye.
 // Class names are written out in full so Tailwind keeps them.
-const kind = (Icon, color, label) => ({ Icon, color, label })
+const kind = (Icon, color, label, fill = 0) => ({ Icon, color, label, fill })
+// Folders are drawn filled; the ones with a glyph inside get a lighter fill so the glyph stays readable.
+const folder = (Icon, color, label, fill = 0.3) => kind(Icon, color, label, fill)
 
-const FOLDER = kind(Folder, 'text-amber-500', 'Folder')
-const HIDDEN_FOLDER = kind(Folder, 'text-amber-500/50', 'Hidden folder')
+const FOLDER = folder(Folder, 'text-amber-500', 'Folder', 0.9)
+const HIDDEN_FOLDER = folder(Folder, 'text-amber-500/50', 'Hidden folder', 0.9)
 const SPECIAL_FOLDERS = {
-  '.git': kind(FolderGit2, 'text-orange-500', 'Git repository data'),
-  node_modules: kind(FolderArchive, 'text-lime-500', 'Dependencies'),
-  vendor: kind(FolderArchive, 'text-lime-500', 'Dependencies'),
-  '.ssh': kind(FolderLock, 'text-red-500', 'SSH keys'),
-  ssl: kind(FolderLock, 'text-red-500', 'Certificates and keys'),
-  private: kind(FolderLock, 'text-red-500', 'Private files'),
-  certs: kind(FolderLock, 'text-red-500', 'Certificates and keys'),
-  etc: kind(FolderCog, 'text-sky-500', 'Configuration'),
-  config: kind(FolderCog, 'text-sky-500', 'Configuration'),
-  conf: kind(FolderCog, 'text-sky-500', 'Configuration'),
-  'conf.d': kind(FolderCog, 'text-sky-500', 'Configuration'),
-  log: kind(FolderArchive, 'text-zinc-400', 'Logs'),
-  logs: kind(FolderArchive, 'text-zinc-400', 'Logs'),
+  '.git': folder(FolderGit2, 'text-orange-500', 'Git repository data'),
+  node_modules: folder(FolderArchive, 'text-lime-500', 'Dependencies'),
+  vendor: folder(FolderArchive, 'text-lime-500', 'Dependencies'),
+  '.ssh': folder(FolderLock, 'text-red-500', 'SSH keys'),
+  ssl: folder(FolderLock, 'text-red-500', 'Certificates and keys'),
+  private: folder(FolderLock, 'text-red-500', 'Private files'),
+  certs: folder(FolderLock, 'text-red-500', 'Certificates and keys'),
+  etc: folder(FolderCog, 'text-sky-500', 'Configuration'),
+  config: folder(FolderCog, 'text-sky-500', 'Configuration'),
+  conf: folder(FolderCog, 'text-sky-500', 'Configuration'),
+  'conf.d': folder(FolderCog, 'text-sky-500', 'Configuration'),
+  log: folder(FolderArchive, 'text-zinc-400', 'Logs'),
+  logs: folder(FolderArchive, 'text-zinc-400', 'Logs'),
 }
 
+const ARCHIVE = kind(ArchiveIcon, '', 'Archive')
 const SECRET = kind(FileKey, 'text-red-500', 'Secret / credentials')
 const CODE = (color, label) => kind(FileCode, color, label)
 const BY_EXT = {
@@ -36,9 +40,9 @@ const BY_EXT = {
   mp4: kind(FileVideo, 'text-pink-500', 'Video'), mkv: kind(FileVideo, 'text-pink-500', 'Video'), mov: kind(FileVideo, 'text-pink-500', 'Video'), webm: kind(FileVideo, 'text-pink-500', 'Video'),
   mp3: kind(FileAudio, 'text-fuchsia-500', 'Audio'), wav: kind(FileAudio, 'text-fuchsia-500', 'Audio'), ogg: kind(FileAudio, 'text-fuchsia-500', 'Audio'), flac: kind(FileAudio, 'text-fuchsia-500', 'Audio'),
   // archives
-  zip: kind(FileArchive, 'text-orange-500', 'Archive'), tar: kind(FileArchive, 'text-orange-500', 'Archive'), gz: kind(FileArchive, 'text-orange-500', 'Archive'),
-  tgz: kind(FileArchive, 'text-orange-500', 'Archive'), bz2: kind(FileArchive, 'text-orange-500', 'Archive'), xz: kind(FileArchive, 'text-orange-500', 'Archive'),
-  '7z': kind(FileArchive, 'text-orange-500', 'Archive'), rar: kind(FileArchive, 'text-orange-500', 'Archive'),
+  zip: ARCHIVE, tar: ARCHIVE, gz: ARCHIVE,
+  tgz: ARCHIVE, bz2: ARCHIVE, xz: ARCHIVE,
+  '7z': ARCHIVE, rar: ARCHIVE,
   // code
   html: CODE('text-orange-600', 'HTML'), htm: CODE('text-orange-600', 'HTML'), vue: CODE('text-emerald-500', 'Vue'),
   css: CODE('text-sky-500', 'CSS'), scss: CODE('text-pink-400', 'Sass'), less: CODE('text-sky-400', 'Less'),
@@ -70,7 +74,7 @@ const FILE = kind(File, 'text-text-secondary', 'File')
 export function iconFor(e) {
   const name = (e.name || '').toLowerCase()
   if (e.is_dir) {
-    if (e.is_link) return kind(FolderSymlink, 'text-cyan-500', 'Folder link')
+    if (e.is_link) return folder(FolderSymlink, 'text-cyan-500', 'Folder link')
     return SPECIAL_FOLDERS[name] || (name.startsWith('.') ? HIDDEN_FOLDER : FOLDER)
   }
   if (e.is_link) return kind(FileSymlink, 'text-cyan-500', 'Link')

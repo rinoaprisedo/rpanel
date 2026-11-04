@@ -256,7 +256,7 @@ function FileManager() {
                     <td className="p-2"><input type="checkbox" checked={selected.includes(e.path)} onChange={() => toggle(e.path)} /></td>
                     <td className="p-2">
                       <button className="flex items-center gap-2 text-left text-text-primary hover:text-primary" onClick={() => openEntry(e)}>
-                        {(() => { const k = iconFor(e); return <k.Icon size={16} strokeWidth={1.8} className={`shrink-0 ${k.color}`} title={k.label} aria-label={k.label} /> })()}
+                        {(() => { const k = iconFor(e); return <k.Icon size={16} strokeWidth={1.8} fill={k.fill ? 'currentColor' : 'none'} fillOpacity={k.fill || undefined} className={`shrink-0 ${k.color}`} title={k.label} aria-label={k.label} /> })()}
                         <span>{e.name}{e.is_link && <span className="text-xs text-text-secondary"> →</span>}</span>
                       </button>
                       {searching && <div className="ml-[23px] truncate font-mono text-[11px] text-text-tertiary">in {where}</div>}
