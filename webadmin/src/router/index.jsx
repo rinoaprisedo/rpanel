@@ -20,6 +20,7 @@ import AppStore from '../pages/app_store/AppStore'
 import Databases from '../pages/databases/Databases'
 import Docker from '../pages/docker/Docker'
 import Cron from '../pages/cron/Cron'
+import ApiKeys from '../pages/api_keys/ApiKeys'
 import Firewall from '../pages/firewall/Firewall'
 import Fail2ban from '../pages/fail2ban/Fail2ban'
 import Updates from '../pages/updates/Updates'
@@ -190,6 +191,14 @@ function AppRouter() {
           element={
             <ProtectedRoute menuKey="docker">
               <Docker />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/api-keys"
+          element={
+            <ProtectedRoute menuKey="api-keys">
+              <ApiKeys />
             </ProtectedRoute>
           }
         />

@@ -1,0 +1,6 @@
+import client from './client'
+
+export const getKeys = () => client.get('/api-keys').then((r) => r.data)
+export const createKey = (d) => client.post('/api-keys', d).then((r) => r.data)
+export const revokeKey = (id) => client.post(`/api-keys/${id}/revoke`).then((r) => r.data)
+export const deleteKey = (id) => client.delete(`/api-keys/${id}`).then((r) => r.data)
