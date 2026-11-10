@@ -256,12 +256,44 @@ func (h *Deploy) Chunk(c *gin.Context) {
 			return
 		}
 	}
-	if err := os.Rename(part, final); err != nil {
+	backedUp, err := replaceWithBackup(part, final)
+	if err != nil {
 		utils.Error(c, 422, "could not finish the upload")
 		return
 	}
-	audit(c, activity_logs.ActionCreate, final, gin.H{"op": "upload", "size": total})
-	utils.Success(c, 200, "ok", gin.H{"done": true, "size": total, "path": final})
+	audit(c, activity_logs.ActionCreate, final, gin.H{"op": "upload", "size": total, "backup": backedUp})
+	utils.Success(c, 200, "ok", gin.H{"done": true, "size": total, "path": final, "backup": backedUp})
+}
+
+// replaceWithBackup moves the finished upload `part` into place as `final`. A file that is already there is kept as
+// "bak-<name>" first; an older bak-<name> is deleted to make room, so exactly one previous version is kept. The swap happens
+// only now that the new file is complete and verified, so a failed upload never touches the current one. If the final move
+// fails, the previous file is put back.
+func replaceWithBackup(part, final string) (backup string, err error) {
+	if st, e := os.Lstat(final); e == nil {
+		if !st.Mode().IsRegular() {
+			return "", errors.New("not a regular file")
+		}
+		backup = filepath.Join(filepath.Dir(final), "bak-"+filepath.Base(final))
+		if bst, e := os.Lstat(backup); e == nil {
+			if !bst.Mode().IsRegular() {
+				return "", errors.New("backup is not a regular file")
+			}
+			if err := os.Remove(backup); err != nil {
+				return "", err
+			}
+		}
+		if err := os.Rename(final, backup); err != nil {
+			return "", err
+		}
+	}
+	if err := os.Rename(part, final); err != nil {
+		if backup != "" {
+			_ = os.Rename(backup, final)
+		}
+		return "", err
+	}
+	return backup, nil
 }
 
 func fileSHA(p string) (string, error) {

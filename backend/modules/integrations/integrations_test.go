@@ -123,3 +123,41 @@ func TestSymlinkedPartIsRefused(t *testing.T) {
 		t.Fatal("symlink target was written")
 	}
 }
+
+func TestOverwriteKeepsOneBackup(t *testing.T) {
+	_, r, root := deployFor(t)
+	put := func(content string) *httptest.ResponseRecorder {
+		u := fmt.Sprintf("/chunk?dir=%s&name=images.tar.gz&offset=0&total=%d&overwrite=1", root, len(content))
+		return send(r, "POST", u, []byte(content))
+	}
+	read := func(n string) string { b, _ := os.ReadFile(filepath.Join(root, n)); return string(b) }
+	exists := func(n string) bool { _, err := os.Stat(filepath.Join(root, n)); return err == nil }
+
+	if w := put("v1"); w.Code != 200 || exists("bak-images.tar.gz") {
+		t.Fatalf("first upload: %d, no backup expected", w.Code)
+	}
+	if w := put("v2"); w.Code != 200 || read("images.tar.gz") != "v2" || read("bak-images.tar.gz") != "v1" {
+		t.Fatalf("second upload: %d images=%q bak=%q", w.Code, read("images.tar.gz"), read("bak-images.tar.gz"))
+	}
+	if w := put("v3"); w.Code != 200 || read("images.tar.gz") != "v3" || read("bak-images.tar.gz") != "v2" {
+		t.Fatalf("third upload must replace the old backup: images=%q bak=%q", read("images.tar.gz"), read("bak-images.tar.gz"))
+	}
+	if exists("images.tar.gz.part") {
+		t.Fatal("part file left behind")
+	}
+}
+
+func TestFailedUploadLeavesCurrentFileAlone(t *testing.T) {
+	_, r, root := deployFor(t)
+	os.WriteFile(filepath.Join(root, "images.tar.gz"), []byte("current"), 0o640)
+	os.WriteFile(filepath.Join(root, "bak-images.tar.gz"), []byte("older"), 0o640)
+	u := fmt.Sprintf("/chunk?dir=%s&name=images.tar.gz&offset=0&total=3&overwrite=1&sha256=%s", root, strings.Repeat("0", 64))
+	if w := send(r, "POST", u, []byte("new")); w.Code != 422 {
+		t.Fatalf("bad checksum: %d", w.Code)
+	}
+	for n, want := range map[string]string{"images.tar.gz": "current", "bak-images.tar.gz": "older"} {
+		if b, _ := os.ReadFile(filepath.Join(root, n)); string(b) != want {
+			t.Fatalf("%s changed to %q", n, b)
+		}
+	}
+}
