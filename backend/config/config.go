@@ -66,6 +66,11 @@ type Config struct {
 	// Docker manager: directory holding one sub-directory per compose project.
 	ComposeDir string
 
+	// DeployDir is where integrations (Vibecoder) may upload image archives; ComposeDir is allowed too.
+	DeployDir string
+	// DeploySSHUsers are the system users an API key (scope deploy:ssh) may add public keys for.
+	DeploySSHUsers []string
+
 	// Cron manager.
 	CronDir     string // where /etc/cron.d-style files are written
 	CronDataDir string // panel-owned dir for job scripts
@@ -134,11 +139,13 @@ func Load() *Config {
 		PanelPort:      getEnv("PANEL_PORT", ""),
 		ReleaseRepo:    getEnv("RPANEL_REPO", "rinoaprisedo/rpanel"),
 
-		DBSecretKey: getEnv("SECRET_KEY", getEnv("DB_SECRET_KEY", "")),
-		BackupDir:   getEnv("BACKUP_DIR", "/www/backup/database"),
-		ComposeDir:  getEnv("COMPOSE_DIR", "/www/docker"),
-		CronDir:     getEnv("CRON_DIR", "/etc/cron.d"),
-		CronDataDir: getEnv("CRON_DATA_DIR", "/www/cron"),
+		DBSecretKey:    getEnv("SECRET_KEY", getEnv("DB_SECRET_KEY", "")),
+		BackupDir:      getEnv("BACKUP_DIR", "/www/backup/database"),
+		ComposeDir:     getEnv("COMPOSE_DIR", "/www/docker"),
+		DeployDir:      getEnv("DEPLOY_DIR", "/www/deploy"),
+		DeploySSHUsers: splitList(getEnv("DEPLOY_SSH_USERS", "root")),
+		CronDir:        getEnv("CRON_DIR", "/etc/cron.d"),
+		CronDataDir:    getEnv("CRON_DATA_DIR", "/www/cron"),
 
 		FirewallProtectedPorts: splitList(getEnv("FIREWALL_PROTECTED_PORTS", "")),
 		SSHDConfig:             getEnv("SSHD_CONFIG", "/etc/ssh/sshd_config"),

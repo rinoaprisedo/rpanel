@@ -27,6 +27,21 @@ websites, databases, files, containers, scheduled jobs and the firewall, with a 
 | **App Store** | One-click Nginx, PHP (several versions), MariaDB, PostgreSQL, Redis, Node.js and more. |
 | **Users & roles** | Per-module view / create / edit / delete permissions, 2FA (TOTP), activity log, branding (name, logo, color), dark mode. |
 
+## Deploy from Vibecoder (API keys)
+
+**API Keys** (User Management) creates keys that an external tool such as Vibecoder uses to upload Docker image archives and run
+compose without signing in to the panel. A key is shown once (only its SHA-256 is stored), carries scopes (`deploy:upload`,
+`deploy:docker`, `deploy:ssh`), and can be limited by IP and expiry. Everything it does is in the Activity Logs (`via: api-key`).
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEPLOY_DIR` | `/www/deploy` | Folder for uploaded image archives. Uploads are confined to it and to `COMPOSE_DIR`, whoever owns the key |
+| `DEPLOY_SSH_USERS` | `root` | System users a `deploy:ssh` key may register public keys for (empty = SSH registration off) |
+
+Uploads are sent in pieces of at most 8 MB (resumable, checksum-verified), so they fit under nginx's `client_max_body_size`
+(the default 1 MB does not: set it to at least `10m` for the panel's server block, or Vibecoder halves the piece size until it fits).
+After an update run `migrate` and `seed` once to create the `api_keys` table and the menu.
+
 ## Requirements
 
 - Ubuntu or Debian, amd64 or arm64, a fresh server and root access. Tested on **Ubuntu 24.04 LTS**.

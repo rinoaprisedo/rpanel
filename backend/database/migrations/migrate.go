@@ -6,6 +6,7 @@ import (
 	"rpanel/backend/modules/activity_logs"
 	"rpanel/backend/modules/cronjobs"
 	"rpanel/backend/modules/databases"
+	"rpanel/backend/modules/integrations"
 	"rpanel/backend/modules/menus"
 	"rpanel/backend/modules/permissions"
 	"rpanel/backend/modules/roles"
@@ -35,6 +36,7 @@ func Run(db *gorm.DB) {
 		&cronjobs.Job{},
 		&cronjobs.Run{},
 		&terminal.Template{},
+		&integrations.APIKey{},
 	)
 	if err != nil {
 		log.Fatalf("migration failed: %v", err)

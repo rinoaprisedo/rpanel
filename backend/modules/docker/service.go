@@ -287,3 +287,20 @@ func (d *Docker) RemoveImage(ctx context.Context, id string) error {
 	_, err := d.cli(ctx, 2*time.Minute, "rmi", id)
 	return err
 }
+
+// Load imports an image archive (docker save output, optionally gzipped) and returns the references it provided.
+func (d *Docker) Load(ctx context.Context, path string) ([]string, error) {
+	res, err := d.cli(ctx, 45*time.Minute, "load", "-i", path)
+	if err != nil {
+		return nil, err
+	}
+	refs := []string{}
+	for _, l := range strings.Split(res.Stdout, "\n") {
+		if r, ok := strings.CutPrefix(strings.TrimSpace(l), "Loaded image: "); ok {
+			refs = append(refs, r)
+		} else if r, ok := strings.CutPrefix(strings.TrimSpace(l), "Loaded image ID: "); ok {
+			refs = append(refs, r)
+		}
+	}
+	return refs, nil
+}

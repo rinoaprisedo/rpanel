@@ -139,6 +139,7 @@ func seedMenus(db *gorm.DB) []uint64 {
 			Menus: []menuDef{
 				{Name: "Users", Icon: "User", Path: "users"},
 				{Name: "Roles", Icon: "Shield", Path: "roles"},
+				{Name: "API Keys", Icon: "KeyRound", Path: "api-keys"},
 			},
 		},
 		{

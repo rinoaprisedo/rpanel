@@ -24,6 +24,7 @@ import (
 	"rpanel/backend/modules/filemanager"
 	"rpanel/backend/modules/files"
 	"rpanel/backend/modules/firewall"
+	"rpanel/backend/modules/integrations"
 	"rpanel/backend/modules/menus"
 	"rpanel/backend/modules/panelssl"
 	"rpanel/backend/modules/roles"
@@ -144,8 +145,8 @@ func main() {
 		}
 		defaultLimit(c)
 	})
-	router.Use(middleware.CSRF(cfg.AppEnv == "production"))
-	router.Use(middleware.XSSSanitizer(filemanager.APIPrefix, docker.APIPrefix, cronjobs.APIPrefix, terminal.TemplateAPIPrefix, databases.APIPrefix))
+	router.Use(middleware.CSRF(cfg.AppEnv == "production", integrations.APIPrefix))
+	router.Use(middleware.XSSSanitizer(filemanager.APIPrefix, docker.APIPrefix, cronjobs.APIPrefix, terminal.TemplateAPIPrefix, databases.APIPrefix, integrations.APIPrefix))
 	router.Use(middleware.MaintenanceMode(rdb, db))
 	router.Use(middleware.RateLimit(rdb, "api", cfg.RateLimitAPI, time.Minute, func(c *gin.Context) string { return c.ClientIP() }))
 
@@ -242,6 +243,12 @@ func main() {
 
 	fileManagerHandler := filemanager.NewHandler(cfg.FMRoots, cfg.CronDataDir, cfg.ComposeDir, cfg.BackupDir, cfg.CronDir, cfg.PrivateStoragePath)
 	fileManagerHandler.RegisterRoutes(api, guard)
+
+	integrationsSvc := integrations.NewService(db)
+	integrations.NewKeysHandler(integrationsSvc).RegisterRoutes(api, guard)
+	// Bearer-key API for Vibecoder: its own, tighter rate limit (per IP) on top of the global one.
+	keyAPI := api.Group("", middleware.RateLimit(rdb, "apikey", 600, time.Minute, func(c *gin.Context) string { return c.ClientIP() }))
+	integrations.NewDeploy(integrationsSvc, cfg).RegisterRoutes(keyAPI)
 
 	filesHandler := files.NewHandler(privateStorage)
 	filesHandler.RegisterRoutes(api, guard)
