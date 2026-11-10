@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, KeyRound, Copy, Ban, Trash2, TriangleAlert } from 'lucide-react'
+import { Plus, KeyRound, Copy, Ban, Trash2, TriangleAlert, Pencil } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Badge from '../../components/ui/Badge'
@@ -33,6 +33,11 @@ function ApiKeys() {
   const [rev, setRev] = useState(null)
   const refresh = () => qc.invalidateQueries({ queryKey: ['api-keys'] })
 
+  const update = useMutation({
+    mutationFn: (f) => api.updateKey(f.uuid, { name: f.name, scopes: f.scopes, expires_at: f.expires_at, allowed_ips: f.allowed_ips.split(/[\s,]+/).filter(Boolean) }),
+    onSuccess: () => { toast.success('Key updated'); setForm(null); refresh() },
+    onError: (e) => toast.error(errMsg(e)),
+  })
   const create = useMutation({
     mutationFn: (f) => api.createKey({ name: f.name, scopes: f.scopes, expires_days: Number(f.expires_days) || 0, allowed_ips: f.allowed_ips.split(/[\s,]+/).filter(Boolean) }),
     onSuccess: (r) => { setForm(null); setCreated(r.data.key); refresh() },
@@ -77,6 +82,7 @@ function ApiKeys() {
                   <dt>Expires</dt><dd className="text-text-primary">{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</dd>
                 </dl>
                 <div className="flex justify-end gap-0.5 border-t border-surface-border pt-3">
+                  {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Edit" onClick={() => setForm({ uuid: k.uuid, name: k.name, scopes: k.scopes, allowed_ips: k.allowed_ips || '', expires_at: k.expires_at ? k.expires_at.slice(0, 10) : '' })}><Pencil size={14} /></Button>}
                   {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Revoke" onClick={() => setRev(k)}><Ban size={14} /></Button>}
                   {canDelete('api-keys') && <Button variant="ghost" className="h-8 px-2" title="Delete" onClick={() => setDel(k)}><Trash2 size={14} className="text-danger" /></Button>}
                 </div>
@@ -86,9 +92,9 @@ function ApiKeys() {
         </div>
       )}
 
-      <Modal open={!!form} onClose={() => setForm(null)} title="New API key" size="lg">
+      <Modal open={!!form} onClose={() => setForm(null)} title={form?.uuid ? 'Edit API key' : 'New API key'} size="lg">
         {form && (
-          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); create.mutate(form) }}>
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); (form.uuid ? update : create).mutate(form) }}>
             <Input label="Name" placeholder="Vibecoder on my Mac" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
             <div className="space-y-2">
               <label className="text-xs font-medium uppercase tracking-[.05em] text-text-secondary">Scopes</label>
@@ -100,10 +106,12 @@ function ApiKeys() {
               ))}
             </div>
             <Input label="Allowed IPs (optional)" placeholder="203.0.113.7, 10.0.0.0/24" value={form.allowed_ips} onChange={(e) => setForm({ ...form, allowed_ips: e.target.value })} />
-            <Input label="Expires after (days, 0 = never)" type="number" value={form.expires_days} onChange={(e) => setForm({ ...form, expires_days: e.target.value })} />
+            {form.uuid
+              ? <Input label="Expires on (empty = never)" type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
+              : <Input label="Expires after (days, 0 = never)" type="number" value={form.expires_days} onChange={(e) => setForm({ ...form, expires_days: e.target.value })} />}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" onClick={() => setForm(null)}>Cancel</Button>
-              <Button type="submit" disabled={create.isPending || !form.name.trim() || !form.scopes.length}>{create.isPending ? 'Creating…' : 'Create key'}</Button>
+              <Button type="submit" disabled={create.isPending || update.isPending || !form.name.trim() || !form.scopes.length}>{form.uuid ? (update.isPending ? 'Saving…' : 'Save') : create.isPending ? 'Creating…' : 'Create key'}</Button>
             </div>
           </form>
         )}

@@ -114,6 +114,51 @@ func (s *Service) List() ([]KeyView, error) {
 	return out, nil
 }
 
+type UpdateInput struct {
+	Name       string   `json:"name" binding:"required,max=100"`
+	Scopes     []string `json:"scopes" binding:"required"`
+	AllowedIPs []string `json:"allowed_ips"`
+	ExpiresAt  string   `json:"expires_at"` // YYYY-MM-DD (end of that day); empty = never
+}
+
+// Update changes a key's name, scopes, IP list and expiry. The key itself never changes, and a revoked key stays revoked.
+func (s *Service) Update(uuid string, in UpdateInput) (*APIKey, error) {
+	scopes, err := validScopes(in.Scopes)
+	if err != nil {
+		return nil, err
+	}
+	ips := []string{}
+	for _, e := range in.AllowedIPs {
+		if e = strings.TrimSpace(e); e != "" {
+			ips = append(ips, e)
+		}
+	}
+	if _, err := middleware.ParseIPList(ips); err != nil || strings.TrimSpace(in.Name) == "" {
+		return nil, ErrBadInput
+	}
+	var exp *time.Time
+	if in.ExpiresAt != "" {
+		d, err := time.ParseInLocation("2006-01-02", in.ExpiresAt, time.Local)
+		if err != nil {
+			return nil, ErrBadInput
+		}
+		d = d.Add(24*time.Hour - time.Second)
+		exp = &d
+	}
+	var k APIKey
+	if err := s.db.Where("uuid = ?", uuid).First(&k).Error; err != nil {
+		return nil, err
+	}
+	if k.RevokedAt != nil {
+		return nil, ErrBadInput
+	}
+	k.Name, k.Scopes, k.AllowedIPs, k.ExpiresAt = strings.TrimSpace(in.Name), scopes, strings.Join(ips, ","), exp
+	if err := s.db.Model(&APIKey{}).Where("id = ?", k.ID).Updates(map[string]any{"name": k.Name, "scopes": k.Scopes, "allowed_ips": k.AllowedIPs, "expires_at": exp}).Error; err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
 func (s *Service) Revoke(uuid string) error {
 	now := time.Now()
 	res := s.db.Model(&APIKey{}).Where("uuid = ? AND revoked_at IS NULL", uuid).Update("revoked_at", &now)
