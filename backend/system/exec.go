@@ -90,7 +90,7 @@ func (Exec) RunEnv(ctx context.Context, timeout time.Duration, env []string, nam
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(append(os.Environ(), "DEBIAN_FRONTEND=noninteractive", "LC_ALL=C"), env...)
+	cmd.Env = append(append(baseEnv(name), "DEBIAN_FRONTEND=noninteractive", "LC_ALL=C"), env...)
 	var out, errb capBuffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
@@ -160,7 +160,7 @@ func (Exec) RunLines(ctx context.Context, timeout time.Duration, env []string, o
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(append(os.Environ(), "DEBIAN_FRONTEND=noninteractive", "LC_ALL=C"), env...)
+	cmd.Env = append(append(baseEnv(name), "DEBIAN_FRONTEND=noninteractive", "LC_ALL=C"), env...)
 	w := &lineWriter{emit: onLine}
 	cmd.Stdout, cmd.Stderr = w, w
 	err := cmd.Run()
@@ -216,4 +216,29 @@ func RunEnv(ctx context.Context, r Runner, timeout time.Duration, env []string, 
 		return Result{ExitCode: -1}, errors.New("runner does not support environment variables")
 	}
 	return er.RunEnv(ctx, timeout, env, name, args...)
+}
+
+// dockerEnvKeep are the only variables a docker command inherits from the panel (matched case-insensitively).
+var dockerEnvKeep = map[string]bool{
+	"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "TMPDIR": true, "XDG_RUNTIME_DIR": true,
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true, "SSL_CERT_FILE": true, "SSL_CERT_DIR": true,
+}
+
+// baseEnv is the environment a child process starts with. The panel loads its own .env into its environment (DB_HOST,
+// DB_PASSWORD, REDIS_*, JWT secrets, ...), and `docker compose` lets the environment override the project's own .env, so
+// a deployed project would silently get the panel's values instead of its own. Docker commands therefore start from a
+// short allowlist (plus DOCKER_* to find the daemon); every other command keeps the full environment.
+func baseEnv(name string) []string {
+	all := os.Environ()
+	if name != "docker" {
+		return all
+	}
+	out := make([]string, 0, 16)
+	for _, kv := range all {
+		k, _, _ := strings.Cut(kv, "=")
+		if dockerEnvKeep[strings.ToUpper(k)] || strings.HasPrefix(k, "DOCKER_") {
+			out = append(out, kv)
+		}
+	}
+	return out
 }

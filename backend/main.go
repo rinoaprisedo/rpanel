@@ -44,7 +44,7 @@ import (
 
 // AppVersion is surfaced unauthenticated at GET /api/v1/version for the
 // frontend footer — bump alongside the @version annotation above.
-const AppVersion = "1.5.16"
+const AppVersion = "1.5.17"
 
 func main() {
 	cfg := config.Load()
