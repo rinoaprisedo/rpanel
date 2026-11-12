@@ -232,6 +232,31 @@ if [ -f "$INSTALL_DIR/.env" ]; then
     sed -i "/add_header Referrer-Policy/a\\    add_header Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'\" always;" "$conf"
     if nginx -t >/dev/null 2>&1; then systemctl reload nginx; rm -f "$conf.bak"; else mv -f "$conf.bak" "$conf"; warn "could not add the CSP header to $conf"; fi
   fi
+  # Panels installed before 1.5.13 answer the key-authenticated deploy API (Vibecoder) with the entrance 404.
+  if [ -f "$conf" ] && ! grep -q "location /api/v1/integrations/" "$conf"; then
+    loc="$(mktemp)"
+    cat > "$loc" <<LOC
+    # Key-authenticated deploy API (Vibecoder). It carries no browser cookie, so it skips the entrance
+    # check; the backend requires a valid API key (scopes, IP limit, expiry) on every call.
+    location /api/v1/integrations/ {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+
+LOC
+    cp -p "$conf" "$conf.bak"
+    awk -v f="$loc" '/^    location \/api\/ \{/ && !done { while ((getline l < f) > 0) print l; done=1 } { print }' "$conf.bak" > "$conf"
+    if nginx -t >/dev/null 2>&1; then systemctl reload nginx; rm -f "$conf.bak"; else mv -f "$conf.bak" "$conf"; warn "could not add the deploy API location to $conf"; fi
+    rm -f "$loc"
+  fi
   migrate_panel_conf
   systemctl stop rpanel 2>/dev/null || true
   # Keep the previous build so a failed upgrade can be undone.
