@@ -65,6 +65,7 @@ func (h *Deploy) RegisterRoutes(rg *gin.RouterGroup) {
 	g.POST("/deploy/upload/chunk", up, h.Chunk)
 
 	g.POST("/deploy/images/load", dk, h.LoadImage)
+	g.POST("/deploy/run", dk, h.RunCommands)
 	g.GET("/deploy/images", dk, h.Images)
 	g.GET("/deploy/compose", dk, h.ComposeList)
 	g.GET("/deploy/compose/:name", dk, h.ComposeGet)

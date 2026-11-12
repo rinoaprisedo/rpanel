@@ -33,6 +33,16 @@ websites, databases, files, containers, scheduled jobs and the firewall, with a 
 compose without signing in to the panel. A key is shown once (only its SHA-256 is stored), carries scopes (`deploy:upload`,
 `deploy:docker`, `deploy:ssh`), and can be limited by IP and expiry. Everything it does is in the Activity Logs (`via: api-key`).
 
+**Commands after an upload** (`deploy:docker`): `POST /api/v1/integrations/deploy/run` with
+`{"commands": ["docker load -i /www/deploy/images.tar.gz", "docker compose up -d", "docker compose exec -T app php artisan migrate --force"], "dir": "/www/wwwroot/app"}`
+runs the lines in order and stops at the first failure. The reply lists each command's output and `failed_at` (0-based, `-1` when
+all succeeded), so the client can show the error, let the user fix the line and send the commands again. No shell is involved:
+only `docker load|tag|pull|images|ps|logs|start|stop|restart|exec` and `docker compose up|down|ps|logs|pull|build|start|stop|restart|exec|config`
+are accepted, `;` `&&` `|` `$()` and redirections are refused (inside quotes they are plain text for the container), `docker run`
+and `--privileged` are refused, and file paths must stay inside the deploy folders. All lines are checked before the first runs.
+`dir` is the project folder for `docker compose` lines that have no `-f` or `--project-directory`. Migrations and seeds run with `exec` in a
+container that `compose up` started. Each request is recorded in the Activity Logs.
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DEPLOY_DIR` | `/www/deploy` | Folder for uploaded image archives. Uploads are confined to it and to `COMPOSE_DIR`, whoever owns the key |
