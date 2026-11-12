@@ -47,6 +47,11 @@ func (h *KeysHandler) Create(c *gin.Context) {
 		return
 	}
 	k, plain, err := h.svc.Create(*uid, in)
+	var bad ErrBadDir
+	if errors.As(err, &bad) {
+		utils.Error(c, 400, bad.Msg)
+		return
+	}
 	if errors.Is(err, ErrBadInput) {
 		utils.Error(c, 400, "invalid scopes, IP list or expiry")
 		return
@@ -54,7 +59,7 @@ func (h *KeysHandler) Create(c *gin.Context) {
 		utils.Error(c, 500, "could not create the key")
 		return
 	}
-	activity_logs.Audit(c, activity_logs.ActionCreate, module, k.UUID.String(), gin.H{"name": k.Name, "scopes": in.Scopes, "allowed_ips": k.AllowedIPs})
+	activity_logs.Audit(c, activity_logs.ActionCreate, module, k.UUID.String(), gin.H{"name": k.Name, "scopes": in.Scopes, "allowed_ips": k.AllowedIPs, "allowed_dirs": splitDirs(k.AllowedDirs)})
 	// The plain key is returned this once; only its hash is stored.
 	utils.Success(c, 201, "created", gin.H{"key": plain, "item": view(*k)})
 }
@@ -66,6 +71,11 @@ func (h *KeysHandler) Update(c *gin.Context) {
 		return
 	}
 	k, err := h.svc.Update(c.Param("uuid"), in)
+	var bad ErrBadDir
+	if errors.As(err, &bad) {
+		utils.Error(c, 400, bad.Msg)
+		return
+	}
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		utils.Error(c, 404, "not found")
@@ -77,7 +87,7 @@ func (h *KeysHandler) Update(c *gin.Context) {
 		utils.Error(c, 500, "could not update the key")
 		return
 	}
-	activity_logs.Audit(c, activity_logs.ActionUpdate, module, k.UUID.String(), gin.H{"op": "edit", "name": k.Name, "scopes": in.Scopes, "allowed_ips": k.AllowedIPs, "expires_at": in.ExpiresAt})
+	activity_logs.Audit(c, activity_logs.ActionUpdate, module, k.UUID.String(), gin.H{"op": "edit", "name": k.Name, "scopes": in.Scopes, "allowed_ips": k.AllowedIPs, "allowed_dirs": splitDirs(k.AllowedDirs), "expires_at": in.ExpiresAt})
 	utils.Success(c, 200, "updated", view(*k))
 }
 

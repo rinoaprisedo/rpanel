@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"rpanel/backend/modules/activity_logs"
+	"rpanel/backend/modules/filemanager"
 	"rpanel/backend/utils"
 
 	"github.com/gin-gonic/gin"
@@ -114,7 +115,7 @@ func flagName(a string) string {
 
 // vet checks one command and returns the arguments to pass to the docker binary. dir (already resolved, may be empty) is
 // the project folder used for compose commands that do not name one.
-func (h *Deploy) vet(line, dir string) ([]string, error) {
+func (h *Deploy) vet(acc filemanager.Access, line, dir string) ([]string, error) {
 	args, err := splitCommand(strings.TrimSpace(line))
 	if err != nil {
 		return nil, err
@@ -133,7 +134,7 @@ func (h *Deploy) vet(line, dir string) ([]string, error) {
 
 	switch sub {
 	case "load":
-		if err := h.checkPaths(rest, map[string]bool{"-i": true, "--input": true}); err != nil {
+		if err := checkPaths(acc, rest, map[string]bool{"-i": true, "--input": true}); err != nil {
 			return nil, err
 		}
 	case "exec":
@@ -145,7 +146,7 @@ func (h *Deploy) vet(line, dir string) ([]string, error) {
 		if len(after) == 0 || !composeSubs[after[0]] {
 			return nil, fmt.Errorf("%w: allowed: docker compose %s", errCmd, joinKeys(composeSubs))
 		}
-		if err := h.checkPaths(opts, pathFlags); err != nil {
+		if err := checkPaths(acc, opts, pathFlags); err != nil {
 			return nil, err
 		}
 		if after[0] == "exec" {
@@ -161,7 +162,7 @@ func (h *Deploy) vet(line, dir string) ([]string, error) {
 }
 
 // checkPaths makes sure every path-valued option stays inside the deploy folders.
-func (h *Deploy) checkPaths(args []string, flags map[string]bool) error {
+func checkPaths(acc filemanager.Access, args []string, flags map[string]bool) error {
 	for i := 0; i < len(args); i++ {
 		name := flagName(args[i])
 		if !flags[name] {
@@ -177,7 +178,7 @@ func (h *Deploy) checkPaths(args []string, flags map[string]bool) error {
 		if v == "" {
 			return fmt.Errorf("%w: %s needs a path", errCmd, name)
 		}
-		if _, err := h.access.Resolve(v); err != nil {
+		if _, err := acc.Resolve(v); err != nil {
 			return fmt.Errorf("%w: %s is outside the deploy folders", errCmd, v)
 		}
 	}
@@ -275,7 +276,7 @@ func (h *Deploy) RunCommands(c *gin.Context) {
 			utils.Error(c, 400, fmt.Sprintf("command %d is too long", i+1))
 			return
 		}
-		args, err := h.vet(line, dir)
+		args, err := h.vet(h.acc(c), line, dir)
 		if err != nil {
 			utils.Error(c, 400, fmt.Sprintf("command %d: %s", i+1, strings.TrimPrefix(err.Error(), errCmd.Error()+": ")))
 			return

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -55,10 +57,11 @@ func validScopes(in []string) (string, error) {
 }
 
 type CreateInput struct {
-	Name       string   `json:"name" binding:"required,max=100"`
-	Scopes     []string `json:"scopes" binding:"required"`
-	AllowedIPs []string `json:"allowed_ips"`
-	ExpiresDay int      `json:"expires_days"` // 0 = never
+	Name        string   `json:"name" binding:"required,max=100"`
+	Scopes      []string `json:"scopes" binding:"required"`
+	AllowedIPs  []string `json:"allowed_ips"`
+	AllowedDirs []string `json:"allowed_dirs"`
+	ExpiresDay  int      `json:"expires_days"` // 0 = never
 }
 
 // Create returns the stored key and its plain text, which cannot be recovered afterwards.
@@ -73,7 +76,11 @@ func (s *Service) Create(owner uint64, in CreateInput) (*APIKey, string, error) 
 			ips = append(ips, e)
 		}
 	}
-	if _, err := middleware.ParseIPList(ips); err != nil || in.ExpiresDay < 0 || in.ExpiresDay > 3650 {
+	dirs, derr := cleanDirs(in.AllowedDirs)
+	if _, err := middleware.ParseIPList(ips); err != nil || derr != nil || in.ExpiresDay < 0 || in.ExpiresDay > 3650 {
+		if derr != nil {
+			return nil, "", derr
+		}
 		return nil, "", ErrBadInput
 	}
 	raw := make([]byte, 24)
@@ -83,7 +90,7 @@ func (s *Service) Create(owner uint64, in CreateInput) (*APIKey, string, error) 
 	plain := keyPrefix + hex.EncodeToString(raw)
 	k := &APIKey{
 		Name: strings.TrimSpace(in.Name), Prefix: plain[:12], KeyHash: hashKey(plain), Scopes: scopes,
-		AllowedIPs: strings.Join(ips, ","), OwnerID: owner, CreatedBy: &owner,
+		AllowedIPs: strings.Join(ips, ","), AllowedDirs: dirs, OwnerID: owner, CreatedBy: &owner,
 	}
 	if in.ExpiresDay > 0 {
 		t := time.Now().Add(time.Duration(in.ExpiresDay) * 24 * time.Hour)
@@ -97,10 +104,13 @@ func (s *Service) Create(owner uint64, in CreateInput) (*APIKey, string, error) 
 
 type KeyView struct {
 	APIKey
-	Scopes []string `json:"scopes"`
+	Scopes      []string `json:"scopes"`
+	AllowedDirs []string `json:"allowed_dirs"`
 }
 
-func view(k APIKey) KeyView { return KeyView{APIKey: k, Scopes: strings.Split(k.Scopes, ",")} }
+func view(k APIKey) KeyView {
+	return KeyView{APIKey: k, Scopes: strings.Split(k.Scopes, ","), AllowedDirs: splitDirs(k.AllowedDirs)}
+}
 
 func (s *Service) List() ([]KeyView, error) {
 	var ks []APIKey
@@ -115,10 +125,11 @@ func (s *Service) List() ([]KeyView, error) {
 }
 
 type UpdateInput struct {
-	Name       string   `json:"name" binding:"required,max=100"`
-	Scopes     []string `json:"scopes" binding:"required"`
-	AllowedIPs []string `json:"allowed_ips"`
-	ExpiresAt  string   `json:"expires_at"` // YYYY-MM-DD (end of that day); empty = never
+	Name        string   `json:"name" binding:"required,max=100"`
+	Scopes      []string `json:"scopes" binding:"required"`
+	AllowedIPs  []string `json:"allowed_ips"`
+	AllowedDirs []string `json:"allowed_dirs"`
+	ExpiresAt   string   `json:"expires_at"` // YYYY-MM-DD (end of that day); empty = never
 }
 
 // Update changes a key's name, scopes, IP list and expiry. The key itself never changes, and a revoked key stays revoked.
@@ -132,6 +143,10 @@ func (s *Service) Update(uuid string, in UpdateInput) (*APIKey, error) {
 		if e = strings.TrimSpace(e); e != "" {
 			ips = append(ips, e)
 		}
+	}
+	dirs, derr := cleanDirs(in.AllowedDirs)
+	if derr != nil {
+		return nil, derr
 	}
 	if _, err := middleware.ParseIPList(ips); err != nil || strings.TrimSpace(in.Name) == "" {
 		return nil, ErrBadInput
@@ -152,8 +167,8 @@ func (s *Service) Update(uuid string, in UpdateInput) (*APIKey, error) {
 	if k.RevokedAt != nil {
 		return nil, ErrBadInput
 	}
-	k.Name, k.Scopes, k.AllowedIPs, k.ExpiresAt = strings.TrimSpace(in.Name), scopes, strings.Join(ips, ","), exp
-	if err := s.db.Model(&APIKey{}).Where("id = ?", k.ID).Updates(map[string]any{"name": k.Name, "scopes": k.Scopes, "allowed_ips": k.AllowedIPs, "expires_at": exp}).Error; err != nil {
+	k.Name, k.Scopes, k.AllowedIPs, k.AllowedDirs, k.ExpiresAt = strings.TrimSpace(in.Name), scopes, strings.Join(ips, ","), dirs, exp
+	if err := s.db.Model(&APIKey{}).Where("id = ?", k.ID).Updates(map[string]any{"name": k.Name, "scopes": k.Scopes, "allowed_ips": k.AllowedIPs, "allowed_dirs": k.AllowedDirs, "expires_at": exp}).Error; err != nil {
 		return nil, err
 	}
 	return &k, nil
@@ -229,3 +244,72 @@ func (s *Service) Authenticate(token, ip, scope string) (*APIKey, error) {
 }
 
 var ErrScope = errors.New("API key lacks the required scope")
+
+// ErrBadDir is returned for a folder a key may not be given; the message is shown to the admin.
+type ErrBadDir struct{ Msg string }
+
+func (e ErrBadDir) Error() string { return e.Msg }
+
+const maxDirs = 10
+
+// System folders a key can never be pointed at (nor anything inside them).
+var protectedDirs = []string{"/etc", "/root", "/proc", "/sys", "/dev", "/boot", "/bin", "/sbin", "/usr", "/lib", "/lib32", "/lib64", "/run", "/var/lib", "/opt/rpanel"}
+
+func splitDirs(s string) []string {
+	out := []string{}
+	for _, d := range strings.Split(s, "\n") {
+		if d = strings.TrimSpace(d); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// cleanDirs checks the folders chosen for a key and returns them joined for storage. Each has to be an existing absolute
+// directory that is not "/" or a system folder (symlinks are resolved first, so a link cannot smuggle one in).
+func cleanDirs(in []string) (string, error) {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, d := range in {
+		if d = strings.TrimSpace(d); d == "" {
+			continue
+		}
+		if !filepath.IsAbs(d) || strings.ContainsAny(d, "\x00\n\r") {
+			return "", ErrBadDir{"folders must be absolute paths: " + d}
+		}
+		clean := filepath.Clean(d)
+		real, err := filepath.EvalSymlinks(clean)
+		if err != nil {
+			return "", ErrBadDir{"folder does not exist: " + clean}
+		}
+		if st, err := os.Stat(real); err != nil || !st.IsDir() {
+			return "", ErrBadDir{"not a folder: " + clean}
+		}
+		if real == "/" {
+			return "", ErrBadDir{"the whole server cannot be given to a key"}
+		}
+		for _, p := range protectedDirs {
+			// Compare against the folder itself and where it really points (/etc is /private/etc on macOS).
+			for _, pp := range []string{p, realOrSelf(p)} {
+				if real == pp || strings.HasPrefix(real, pp+"/") || clean == pp || strings.HasPrefix(clean, pp+"/") {
+					return "", ErrBadDir{clean + " is a system folder and cannot be given to a key"}
+				}
+			}
+		}
+		if !seen[clean] {
+			seen[clean] = true
+			out = append(out, clean)
+		}
+	}
+	if len(out) > maxDirs {
+		return "", ErrBadDir{"at most 10 folders per key"}
+	}
+	return strings.Join(out, "\n"), nil
+}
+
+func realOrSelf(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}

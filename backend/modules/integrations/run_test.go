@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -65,7 +66,7 @@ func TestVet(t *testing.T) {
 		"docker exec -u root app ls --privileged":                {"exec", "-u", "root", "app", "ls", "--privileged"}, // after the container name: the app's own flag
 	}
 	for line, want := range ok {
-		got, err := h.vet(line, dir)
+		got, err := h.vet(h.access, line, dir)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Errorf("%q: got %q, %v want %q", line, got, err, want)
 		}
@@ -77,7 +78,7 @@ func TestVet(t *testing.T) {
 		"docker exec --privileged app sh", "docker compose exec --privileged app sh", "", "docker ps; id",
 	}
 	for _, line := range bad {
-		if got, err := h.vet(line, dir); err == nil {
+		if got, err := h.vet(h.access, line, dir); err == nil {
 			t.Errorf("should reject %q, got %q", line, got)
 		}
 	}
@@ -126,5 +127,70 @@ func TestRunRefusesEverythingIfOneLineIsBad(t *testing.T) {
 	}
 	if code, _ := post(r, gin.H{"commands": []string{"docker ps"}, "dir": "/etc"}); code != 403 {
 		t.Errorf("dir outside the deploy folders must be refused, got %d", code)
+	}
+}
+
+func TestCleanDirs(t *testing.T) {
+	ok := t.TempDir()
+	file := filepath.Join(ok, "f")
+	_ = os.WriteFile(file, nil, 0o644)
+	got, err := cleanDirs([]string{ok, ok + "/", " " + ok, ""})
+	if err != nil || got != ok {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	for _, bad := range []string{"/", "/etc", "/etc/nginx", "relative/dir", "/does/not/exist", file, "/root", "/usr/local"} {
+		if _, err := cleanDirs([]string{bad}); err == nil {
+			t.Errorf("should reject %q", bad)
+		}
+	}
+	link := filepath.Join(t.TempDir(), "to-etc")
+	if err := os.Symlink("/etc", link); err == nil {
+		if _, err := cleanDirs([]string{link}); err == nil {
+			t.Error("a symlink to /etc must be refused")
+		}
+	}
+	many := []string{}
+	for i := 0; i < 11; i++ {
+		d := filepath.Join(ok, "d"+string(rune('a'+i)))
+		_ = os.Mkdir(d, 0o755)
+		many = append(many, d)
+	}
+	if _, err := cleanDirs(many); err == nil {
+		t.Error("more than 10 folders must be refused")
+	}
+}
+
+func TestKeyFoldersExtendAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h, root := runDeploy(t, &fakeRun{})
+	extra := t.TempDir()
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		if c.GetHeader("X-Test-Dirs") != "" {
+			c.Set(ctxKeyDirs, []string{extra})
+		}
+	})
+	r.GET("/roots", h.Roots)
+	r.GET("/list", h.List)
+	do := func(path string, withKey bool) int {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if withKey {
+			req.Header.Set("X-Test-Dirs", "1")
+		}
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	if do("/list?path="+extra, false) != 403 {
+		t.Error("a folder outside the deploy folders must be refused for a key without it")
+	}
+	if do("/list?path="+extra, true) != 200 {
+		t.Error("a folder chosen for the key must be accessible")
+	}
+	if do("/list?path="+root, true) != 200 {
+		t.Error("the deploy folders stay available")
+	}
+	if do("/list?path=/etc", true) != 403 {
+		t.Error("other folders stay refused")
 	}
 }

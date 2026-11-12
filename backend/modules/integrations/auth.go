@@ -9,7 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const ctxKeyID = "api_key_uuid"
+const (
+	ctxKeyID   = "api_key_uuid"
+	ctxKeyDirs = "api_key_dirs"
+)
 
 // KeyAuth authenticates a request by its "Authorization: Bearer rpk_..." header and requires `scope`.
 // The key's owner becomes the acting user (so the audit log names them), but the scope is the only authority granted.
@@ -35,6 +38,7 @@ func (s *Service) KeyAuth(scope string) gin.HandlerFunc {
 		c.Set(utils.CtxUserID, k.OwnerID)
 		c.Set(utils.CtxIsSuperadmin, false)
 		c.Set(ctxKeyID, k.UUID.String())
+		c.Set(ctxKeyDirs, splitDirs(k.AllowedDirs))
 		c.Next()
 	}
 }

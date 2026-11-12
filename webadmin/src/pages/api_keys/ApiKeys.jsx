@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, KeyRound, Copy, Ban, Trash2, TriangleAlert, Pencil } from 'lucide-react'
+import { Plus, KeyRound, Copy, Ban, Trash2, TriangleAlert, Pencil, Folder, FolderSearch, X } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
+import FolderBrowser from './FolderBrowser'
 import Skeleton from '../../components/ui/Skeleton'
 import EmptyState from '../../components/ui/EmptyState'
 import usePermission from '../../hooks/usePermission'
@@ -20,7 +21,7 @@ const SCOPES = {
   'deploy:docker': ['Docker deploy', 'docker load, edit compose files, compose up / down / logs'],
   'deploy:ssh': ['SSH access', 'Register a public key so the tool can open an SSH session'],
 }
-const emptyForm = { name: '', scopes: ['deploy:upload', 'deploy:docker'], allowed_ips: '', expires_days: 0 }
+const emptyForm = { name: '', scopes: ['deploy:upload', 'deploy:docker'], allowed_ips: '', allowed_dirs: [], expires_days: 0 }
 
 function ApiKeys() {
   const qc = useQueryClient()
@@ -28,18 +29,19 @@ function ApiKeys() {
   const { data, isLoading } = useQuery({ queryKey: ['api-keys'], queryFn: api.getKeys })
   const keys = data?.data?.keys || []
   const [form, setForm] = useState(null)
+  const [picking, setPicking] = useState(false)
   const [created, setCreated] = useState(null)
   const [del, setDel] = useState(null)
   const [rev, setRev] = useState(null)
   const refresh = () => qc.invalidateQueries({ queryKey: ['api-keys'] })
 
   const update = useMutation({
-    mutationFn: (f) => api.updateKey(f.uuid, { name: f.name, scopes: f.scopes, expires_at: f.expires_at, allowed_ips: f.allowed_ips.split(/[\s,]+/).filter(Boolean) }),
+    mutationFn: (f) => api.updateKey(f.uuid, { name: f.name, scopes: f.scopes, expires_at: f.expires_at, allowed_dirs: f.allowed_dirs, allowed_ips: f.allowed_ips.split(/[\s,]+/).filter(Boolean) }),
     onSuccess: () => { toast.success('Key updated'); setForm(null); refresh() },
     onError: (e) => toast.error(errMsg(e)),
   })
   const create = useMutation({
-    mutationFn: (f) => api.createKey({ name: f.name, scopes: f.scopes, expires_days: Number(f.expires_days) || 0, allowed_ips: f.allowed_ips.split(/[\s,]+/).filter(Boolean) }),
+    mutationFn: (f) => api.createKey({ name: f.name, scopes: f.scopes, expires_days: Number(f.expires_days) || 0, allowed_dirs: f.allowed_dirs, allowed_ips: f.allowed_ips.split(/[\s,]+/).filter(Boolean) }),
     onSuccess: (r) => { setForm(null); setCreated(r.data.key); refresh() },
     onError: (e) => toast.error(errMsg(e)),
   })
@@ -52,7 +54,7 @@ function ApiKeys() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-text-secondary">Keys let an external tool such as Vibecoder upload image archives and run Docker deploys without signing in to this panel. A key only has the scopes you give it, and only works inside the deploy folders.</p>
+        <p className="max-w-2xl text-sm text-text-secondary">Keys let an external tool such as Vibecoder upload image archives and run Docker deploys without signing in to this panel. A key only has the scopes you give it, and only works inside the deploy folders and the folders you choose for it.</p>
         {canCreate('api-keys') && <Button onClick={() => setForm(emptyForm)}><Plus size={14} />New key</Button>}
       </div>
 
@@ -78,11 +80,12 @@ function ApiKeys() {
                 </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-text-secondary">
                   <dt>Last used</dt><dd className="text-text-primary">{k.last_used_at ? `${ago(k.last_used_at)}${k.last_used_ip ? ` · ${k.last_used_ip}` : ''}` : 'Never'}</dd>
+                  <dt>Folders</dt><dd className="break-all font-mono text-text-primary">{k.allowed_dirs?.length ? k.allowed_dirs.join(', ') : <span className="font-sans">Deploy folders only</span>}</dd>
                   <dt>Allowed IPs</dt><dd className="break-all text-text-primary">{k.allowed_ips || 'Any'}</dd>
                   <dt>Expires</dt><dd className="text-text-primary">{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</dd>
                 </dl>
                 <div className="flex justify-end gap-0.5 border-t border-surface-border pt-3">
-                  {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Edit" onClick={() => setForm({ uuid: k.uuid, name: k.name, scopes: k.scopes, allowed_ips: k.allowed_ips || '', expires_at: k.expires_at ? k.expires_at.slice(0, 10) : '' })}><Pencil size={14} /></Button>}
+                  {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Edit" onClick={() => setForm({ uuid: k.uuid, name: k.name, scopes: k.scopes, allowed_ips: k.allowed_ips || '', allowed_dirs: k.allowed_dirs || [], expires_at: k.expires_at ? k.expires_at.slice(0, 10) : '' })}><Pencil size={14} /></Button>}
                   {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Revoke" onClick={() => setRev(k)}><Ban size={14} /></Button>}
                   {canDelete('api-keys') && <Button variant="ghost" className="h-8 px-2" title="Delete" onClick={() => setDel(k)}><Trash2 size={14} className="text-danger" /></Button>}
                 </div>
@@ -105,6 +108,22 @@ function ApiKeys() {
                 </label>
               ))}
             </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-[.05em] text-text-secondary">Folders this key can use</label>
+              <p className="text-xs text-text-secondary">Besides the deploy folders, the key can upload to, load from and run compose in these folders only.</p>
+              {form.allowed_dirs.length > 0 && (
+                <ul className="space-y-1.5">
+                  {form.allowed_dirs.map((d) => (
+                    <li key={d} className="flex items-center gap-2 rounded-md border border-surface-border px-3 py-1.5 text-sm">
+                      <Folder size={14} className="shrink-0 text-amber-500" />
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary" title={d}>{d}</span>
+                      <button type="button" aria-label={`Remove ${d}`} className="text-text-tertiary hover:text-danger" onClick={() => setForm({ ...form, allowed_dirs: form.allowed_dirs.filter((x) => x !== d) })}><X size={14} /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Button type="button" variant="secondary" onClick={() => setPicking(true)} disabled={form.allowed_dirs.length >= 10}><FolderSearch size={14} />Add folder</Button>
+            </div>
             <Input label="Allowed IPs (optional)" placeholder="203.0.113.7, 10.0.0.0/24" value={form.allowed_ips} onChange={(e) => setForm({ ...form, allowed_ips: e.target.value })} />
             {form.uuid
               ? <Input label="Expires on (empty = never)" type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} />
@@ -116,6 +135,8 @@ function ApiKeys() {
           </form>
         )}
       </Modal>
+
+      <FolderBrowser open={picking} onClose={() => setPicking(false)} onSelect={(p) => { setForm((f) => (f.allowed_dirs.includes(p) ? f : { ...f, allowed_dirs: [...f.allowed_dirs, p] })); setPicking(false) }} />
 
       <Modal open={!!created} onClose={() => setCreated(null)} title="Your new API key" size="lg">
         <div className="space-y-4">

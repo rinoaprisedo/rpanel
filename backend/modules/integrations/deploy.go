@@ -98,8 +98,20 @@ func fail(c *gin.Context, err error) {
 	}
 }
 
+// acc is the folder access of this request: the deploy folders plus the folders chosen for the calling key.
+func (h *Deploy) acc(c *gin.Context) filemanager.Access {
+	extra, _ := c.Get(ctxKeyDirs)
+	dirs, _ := extra.([]string)
+	if len(dirs) == 0 {
+		return h.access
+	}
+	return filemanager.Access{Roots: append(append([]string{}, h.roots...), dirs...)}
+}
+
+func (h *Deploy) rootsFor(c *gin.Context) []string { return h.acc(c).Roots }
+
 func (h *Deploy) dir(c *gin.Context, raw string) (string, bool) {
-	p, err := h.access.Resolve(raw)
+	p, err := h.acc(c).Resolve(raw)
 	if err != nil {
 		fail(c, err)
 		return "", false
@@ -112,14 +124,14 @@ func (h *Deploy) dir(c *gin.Context, raw string) (string, bool) {
 }
 
 func (h *Deploy) Ping(c *gin.Context) {
-	utils.Success(c, 200, "ok", gin.H{"roots": h.roots, "max_chunk": MaxChunk})
+	utils.Success(c, 200, "ok", gin.H{"roots": h.rootsFor(c), "max_chunk": MaxChunk})
 }
 
 func (h *Deploy) Roots(c *gin.Context) {
 	for _, r := range h.roots {
 		_ = os.MkdirAll(r, 0o755)
 	}
-	utils.Success(c, 200, "ok", h.roots)
+	utils.Success(c, 200, "ok", h.rootsFor(c))
 }
 
 func (h *Deploy) List(c *gin.Context) {
@@ -143,7 +155,7 @@ func (h *Deploy) Mkdir(c *gin.Context) {
 		utils.Error(c, 400, "invalid request")
 		return
 	}
-	p, err := h.access.Resolve(in.Path)
+	p, err := h.acc(c).Resolve(in.Path)
 	if err != nil {
 		fail(c, err)
 		return
@@ -170,7 +182,7 @@ func (h *Deploy) target(c *gin.Context) (final, part string, ok bool) {
 	final = filepath.Join(dir, name)
 	part = final + ".part"
 	for _, p := range []string{final, part} {
-		if _, err := h.access.Resolve(p); err != nil {
+		if _, err := h.acc(c).Resolve(p); err != nil {
 			fail(c, err)
 			return "", "", false
 		}
@@ -318,7 +330,7 @@ func (h *Deploy) LoadImage(c *gin.Context) {
 		utils.Error(c, 400, "invalid request")
 		return
 	}
-	p, err := h.access.Resolve(in.Path)
+	p, err := h.acc(c).Resolve(in.Path)
 	if err != nil {
 		fail(c, err)
 		return

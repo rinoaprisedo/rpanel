@@ -31,7 +31,9 @@ websites, databases, files, containers, scheduled jobs and the firewall, with a 
 
 **API Keys** (User Management) creates keys that an external tool such as Vibecoder uses to upload Docker image archives and run
 compose without signing in to the panel. A key is shown once (only its SHA-256 is stored), carries scopes (`deploy:upload`,
-`deploy:docker`, `deploy:ssh`), and can be limited by IP and expiry. Everything it does is in the Activity Logs (`via: api-key`).
+`deploy:docker`, `deploy:ssh`), and can be limited by IP and expiry. Each key can also be given extra **folders**
+(picked with a folder browser) on top of `DEPLOY_DIR` and `COMPOSE_DIR`: uploads, `docker load -i`, `-f` and `dir` work in those too. `/`, system
+folders (`/etc`, `/root`, `/usr`, ...) and symlinks to them are refused. Everything it does is in the Activity Logs (`via: api-key`).
 
 **Commands after an upload** (`deploy:docker`): `POST /api/v1/integrations/deploy/run` with
 `{"commands": ["docker load -i /www/deploy/images.tar.gz", "docker compose up -d", "docker compose exec -T app php artisan migrate --force"], "dir": "/www/wwwroot/app"}`
