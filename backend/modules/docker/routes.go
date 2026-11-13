@@ -20,6 +20,10 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g.GET("/images", guard(m, "view"), h.ListImages)
 	g.POST("/images/pull", guard(m, "create"), h.Pull)
 	g.DELETE("/images", guard(m, "delete"), h.RemoveImage)
+	g.POST("/images/prune", guard(m, "delete"), h.PruneImages)
+
+	g.GET("/volumes", guard(m, "view"), h.ListVolumes)
+	g.POST("/volumes/prune", guard(m, "delete"), h.PruneVolumes)
 
 	g.GET("/compose", guard(m, "view"), h.ListProjects)
 	g.POST("/compose", guard(m, "create"), h.CreateProject)

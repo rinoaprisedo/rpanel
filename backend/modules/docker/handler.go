@@ -203,6 +203,51 @@ func (h *Handler) RemoveImage(c *gin.Context) {
 	utils.Success(c, 200, "image removed", nil)
 }
 
+// PruneImages godoc
+// @Summary		Remove dangling images (all=true: every image unused by a container)
+// @Tags			docker
+// @Security		SessionCookie
+// @Router			/docker/images/prune [post]
+func (h *Handler) PruneImages(c *gin.Context) {
+	all := c.Query("all") == "true"
+	audit(c, activity_logs.ActionDelete, "images", gin.H{"op": "image prune", "all": all})
+	freed, err := h.d.PruneImages(c.Request.Context(), all)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "images cleaned, reclaimed "+freed, gin.H{"reclaimed": freed})
+}
+
+// ListVolumes godoc
+// @Summary		List volumes
+// @Tags			docker
+// @Security		SessionCookie
+// @Router			/docker/volumes [get]
+func (h *Handler) ListVolumes(c *gin.Context) {
+	out, err := h.d.ListVolumes(c.Request.Context())
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "ok", out)
+}
+
+// PruneVolumes godoc
+// @Summary		Remove volumes not used by any container
+// @Tags			docker
+// @Security		SessionCookie
+// @Router			/docker/volumes/prune [post]
+func (h *Handler) PruneVolumes(c *gin.Context) {
+	audit(c, activity_logs.ActionDelete, "volumes", gin.H{"op": "volume prune"})
+	freed, err := h.d.PruneVolumes(c.Request.Context())
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	utils.Success(c, 200, "volumes cleaned, reclaimed "+freed, gin.H{"reclaimed": freed})
+}
+
 // ListProjects godoc
 // @Summary		List compose projects
 // @Tags			docker

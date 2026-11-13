@@ -14,7 +14,7 @@ import Skeleton from '../../components/ui/Skeleton'
 import * as api from '../../api/docker'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
-const tabs = ['Overview', 'Containers', 'Images', 'Compose']
+const tabs = ['Overview', 'Containers', 'Images', 'Volumes', 'Compose']
 const ACTION_LABEL = { start: 'Starting…', stop: 'Stopping…', restart: 'Restarting…', remove: 'Removing…' }
 const ACTION_DONE = { start: 'Container started', stop: 'Container stopped', restart: 'Container restarted' }
 const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean)
@@ -34,6 +34,7 @@ function Docker() {
   const overview = useQuery({ queryKey: ['d-overview'], queryFn: api.getDockerOverview, enabled: !!ready && tab === 'Overview', refetchInterval: 20000, retry: false })
   const stats = useQuery({ queryKey: ['d-stats'], queryFn: api.getDockerStats, enabled: !!ready && tab === 'Overview', refetchInterval: 1000, retry: false })
   const images = useQuery({ queryKey: ['d-images'], queryFn: api.getImages, enabled: !!ready && tab === 'Images', retry: false })
+  const volumes = useQuery({ queryKey: ['d-volumes'], queryFn: api.getVolumes, enabled: !!ready && tab === 'Volumes', retry: false })
   const projects = useQuery({ queryKey: ['d-projects'], queryFn: api.getProjects, enabled: tab === 'Compose', retry: false })
 
   const [runForm, setRunForm] = useState(null)
@@ -41,6 +42,8 @@ function Docker() {
   const [logs, setLogs] = useState(null) // { title, text, reload }
   const [editor, setEditor] = useState(null) // { name, content, isNew }
   const [confirm, setConfirm] = useState(null)
+  const [prune, setPrune] = useState(null) // { all } for the image clean-up dialog
+  const [pruneVol, setPruneVol] = useState(false)
   const [output, setOutput] = useState(null) // { title, text }
 
   // Returns a promise so a mutation stays pending until the refreshed list has arrived.
@@ -54,6 +57,8 @@ function Docker() {
   })
   const run = useMutation(m((d) => api.runContainer(d), 'Container started', () => { setRunForm(null); inv('d-containers', 'd-images') }))
   const pull = useMutation(m((r) => api.pullImage(r), 'Image pulled', () => { setPullRef(null); inv('d-images') }))
+  const pruneImg = useMutation(m((all) => api.pruneImages(all), null, (r) => { toast.success(r?.message || 'Images cleaned'); setPrune(null); return inv('d-images', 'd-overview') }))
+  const pruneVols = useMutation(m(() => api.pruneVolumes(), null, (r) => { toast.success(r?.message || 'Volumes cleaned'); setPruneVol(false); return inv('d-volumes', 'd-overview') }))
   const save = useMutation(m(({ name, content, isNew }) => (isNew ? api.createProject(name, content) : api.updateProject(name, content)), 'Saved', () => { setEditor(null); inv('d-projects') }))
   const projOp = useMutation({
     mutationFn: ({ name, op }) => (op === 'up' ? api.projectUp(name) : api.projectDown(name)),
@@ -117,11 +122,21 @@ function Docker() {
       )}
 
       {tab === 'Images' && (
-        <Table query={images} search={search} onSearch={setSearch} placeholder="Search image or tag…" action={<Button onClick={() => setPullRef('')}><Download size={14} />Pull image</Button>}
+        <Table query={images} search={search} onSearch={setSearch} placeholder="Search image or tag…" action={<div className="flex gap-2"><Button variant="secondary" onClick={() => setPrune({ all: false })}><Trash2 size={14} />Clear image</Button><Button onClick={() => setPullRef('')}><Download size={14} />Pull image</Button></div>}
           head={['Repository', 'Tag', 'Size', 'Created', '']}
           rows={match(images.data?.data, search, (i) => `${i.repository} ${i.tag} ${i.id}`).map((i) => [
             i.repository, i.tag, i.size, i.created,
             <div key="a" className="flex justify-end"><Button variant="ghost" title="Remove" onClick={() => setConfirm({ title: `Remove ${i.repository}:${i.tag}`, message: 'Fails if a container still uses the image.', run: () => api.removeImage(i.id) })}><Trash2 size={14} className="text-danger" /></Button></div>,
+          ])} />
+      )}
+
+      {tab === 'Volumes' && (
+        <Table query={volumes} search={search} onSearch={setSearch} placeholder="Search volume or container…" action={<Button variant="secondary" onClick={() => setPruneVol(true)}><Trash2 size={14} />Clear volume</Button>}
+          head={['Name', 'Mount point', 'Container', 'Driver', 'Created']}
+          rows={match(volumes.data?.data, search, (v) => `${v.name} ${v.containers} ${v.mountpoint}`).map((v) => [
+            <span key="n" className="max-w-[16rem] truncate font-mono text-xs" title={v.name}>{v.name}</span>,
+            <span key="m" className="font-mono text-xs">{v.mountpoint}</span>,
+            v.containers || '--', v.driver, v.created,
           ])} />
       )}
 
@@ -201,6 +216,19 @@ function Docker() {
       <Modal open={!!output} onClose={() => setOutput(null)} title={output?.title} size="lg">
         <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-md bg-[#1a1917] p-3 font-mono text-xs text-gray-200">{output?.text}</pre>
       </Modal>
+
+      <ConfirmDialog open={!!prune} onClose={() => setPrune(null)} loading={pruneImg.isPending} title="Clear image" variant="primary"
+        message={(
+          <span className="block space-y-3">
+            <span className="block">Clean up images with no image name, continue?</span>
+            <label className="flex cursor-pointer items-center gap-2"><input type="checkbox" checked={!!prune?.all} onChange={(e) => setPrune({ all: e.target.checked })} />Clean up images that are not used by containers</label>
+          </span>
+        )}
+        confirmLabel="Confirm" loadingLabel="Cleaning…" onConfirm={() => pruneImg.mutate(!!prune?.all)} />
+
+      <ConfirmDialog open={pruneVol} onClose={() => setPruneVol(false)} loading={pruneVols.isPending} title="Clear volume"
+        message="Remove all volumes that are not used by any container? Data in those volumes is lost, including volumes you created yourself."
+        confirmLabel="Confirm" loadingLabel="Cleaning…" onConfirm={() => pruneVols.mutate()} />
 
       <ConfirmDialog open={!!confirm} onClose={() => setConfirm(null)} loading={doConfirm.isPending} title={confirm?.title} message={confirm?.message}
         confirmLabel="Confirm" loadingLabel="Working…" onConfirm={() => doConfirm.mutate()} />

@@ -288,6 +288,75 @@ func (d *Docker) RemoveImage(ctx context.Context, id string) error {
 	return err
 }
 
+// PruneImages removes dangling images; with all it also removes every image no container uses.
+func (d *Docker) PruneImages(ctx context.Context, all bool) (string, error) {
+	args := []string{"image", "prune", "-f"}
+	if all {
+		args = append(args, "-a")
+	}
+	res, err := d.cli(ctx, 10*time.Minute, args...)
+	if err != nil {
+		return "", err
+	}
+	return reclaimed(res.Stdout), nil
+}
+
+func reclaimed(out string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if r, ok := strings.CutPrefix(strings.TrimSpace(l), "Total reclaimed space: "); ok {
+			return r
+		}
+	}
+	return "0B"
+}
+
+// ---- volumes ----
+
+type Volume struct {
+	Name       string `json:"name"`
+	Driver     string `json:"driver"`
+	Mountpoint string `json:"mountpoint"`
+	Created    string `json:"created"`
+	Containers string `json:"containers"`
+}
+
+func (d *Docker) ListVolumes(ctx context.Context) ([]Volume, error) {
+	res, err := d.cli(ctx, 30*time.Second, "volume", "ls", "--format", "{{.Name}}")
+	if err != nil {
+		return nil, err
+	}
+	out := []Volume{}
+	for _, name := range strings.Fields(res.Stdout) {
+		if !containerRe.MatchString(name) {
+			continue
+		}
+		v := Volume{Name: name}
+		if r, err := d.cli(ctx, 15*time.Second, "volume", "inspect", "--format", "{{json .}}", name); err == nil {
+			var m struct{ Driver, Mountpoint, CreatedAt string }
+			if json.Unmarshal([]byte(strings.TrimSpace(r.Stdout)), &m) == nil {
+				v.Driver, v.Mountpoint, v.Created = m.Driver, m.Mountpoint, m.CreatedAt
+			}
+		}
+		if r, err := d.cli(ctx, 15*time.Second, "ps", "-a", "--filter", "volume="+name, "--format", "{{.Names}}"); err == nil {
+			v.Containers = strings.Join(strings.Fields(r.Stdout), ", ")
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// PruneVolumes removes volumes no container references (anonymous only on newer engines unless -a).
+func (d *Docker) PruneVolumes(ctx context.Context) (string, error) {
+	res, err := d.cli(ctx, 10*time.Minute, "volume", "prune", "-a", "-f")
+	if err != nil {
+		// engines before 23 reject -a and prune every unused volume by default
+		if res, err = d.cli(ctx, 10*time.Minute, "volume", "prune", "-f"); err != nil {
+			return "", err
+		}
+	}
+	return reclaimed(res.Stdout), nil
+}
+
 // Load imports an image archive (docker save output, optionally gzipped) and returns the references it provided.
 func (d *Docker) Load(ctx context.Context, path string) ([]string, error) {
 	res, err := d.cli(ctx, 45*time.Minute, "load", "-i", path)
