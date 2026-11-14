@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Plus, KeyRound, Copy, Ban, Trash2, TriangleAlert, Pencil, Folder, FolderSearch, X } from 'lucide-react'
+import { Plus, KeyRound, Copy, Ban, Trash2, TriangleAlert, Pencil, Folder, FolderSearch, X, ScrollText, Upload, Container, Terminal, Clock, Globe, ShieldCheck } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Badge from '../../components/ui/Badge'
@@ -11,6 +11,7 @@ import FolderBrowser from './FolderBrowser'
 import Skeleton from '../../components/ui/Skeleton'
 import EmptyState from '../../components/ui/EmptyState'
 import usePermission from '../../hooks/usePermission'
+import KeyLogs from './KeyLogs'
 import { cn } from '../../utils/cn'
 import { ago } from '../../utils/cron'
 import * as api from '../../api/apiKeys'
@@ -21,6 +22,7 @@ const SCOPES = {
   'deploy:docker': ['Docker deploy', 'docker load, edit compose files, compose up / down / logs'],
   'deploy:ssh': ['SSH access', 'Register a public key so the tool can open an SSH session'],
 }
+const SCOPE_ICON = { 'deploy:upload': Upload, 'deploy:docker': Container, 'deploy:ssh': Terminal }
 const emptyForm = { name: '', scopes: ['deploy:upload', 'deploy:docker'], allowed_ips: '', allowed_dirs: [], expires_days: 0 }
 
 function ApiKeys() {
@@ -33,6 +35,7 @@ function ApiKeys() {
   const [created, setCreated] = useState(null)
   const [del, setDel] = useState(null)
   const [rev, setRev] = useState(null)
+  const [logKey, setLogKey] = useState(null)
   const refresh = () => qc.invalidateQueries({ queryKey: ['api-keys'] })
 
   const update = useMutation({
@@ -66,29 +69,40 @@ function ApiKeys() {
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {keys.map((k) => {
             const [variant, label] = state(k)
+            const dead = variant !== 'success'
             return (
-              <article key={k.uuid} className={cn('flex flex-col gap-3 rounded-xl border border-surface-border bg-surface-card p-4', variant !== 'success' && 'opacity-70')}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+              <article key={k.uuid} className={cn('flex flex-col overflow-hidden rounded-xl border border-surface-border bg-surface-card', dead && 'opacity-75')}>
+                <header className="flex items-start gap-3 p-4 pb-3">
+                  <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-lg', dead ? 'bg-surface-hover text-text-secondary' : 'bg-primary/10 text-primary')}><KeyRound size={18} /></span>
+                  <div className="min-w-0 flex-1">
                     <h3 className="truncate text-sm font-semibold text-text-primary">{k.name}</h3>
                     <p className="font-mono text-xs text-text-secondary">{k.prefix}…</p>
                   </div>
                   <Badge variant={variant}>{label}</Badge>
+                </header>
+
+                <div className="flex flex-wrap gap-1.5 px-4">
+                  {k.scopes.map((s) => {
+                    const Icon = SCOPE_ICON[s] || ShieldCheck
+                    return <span key={s} className="inline-flex items-center gap-1 rounded-md border border-surface-border bg-surface-hover/50 px-2 py-0.5 text-xs text-text-primary"><Icon size={12} className="text-primary" />{SCOPES[s]?.[0] || s}</span>
+                  })}
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {k.scopes.map((s) => <span key={s} className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">{SCOPES[s]?.[0] || s}</span>)}
-                </div>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-text-secondary">
-                  <dt>Last used</dt><dd className="text-text-primary">{k.last_used_at ? `${ago(k.last_used_at)}${k.last_used_ip ? ` · ${k.last_used_ip}` : ''}` : 'Never'}</dd>
-                  <dt>Folders</dt><dd className="break-all font-mono text-text-primary">{k.allowed_dirs?.length ? k.allowed_dirs.join(', ') : <span className="font-sans">Deploy folders only</span>}</dd>
-                  <dt>Allowed IPs</dt><dd className="break-all text-text-primary">{k.allowed_ips || 'Any'}</dd>
-                  <dt>Expires</dt><dd className="text-text-primary">{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</dd>
+
+                <dl className="mt-3 space-y-2 px-4 pb-4 text-xs">
+                  <Row icon={Clock} label="Last used">{k.last_used_at ? <><span className="text-text-primary">{ago(k.last_used_at)}</span>{k.last_used_ip && <span className="text-text-secondary"> · {k.last_used_ip}</span>}</> : <span className="text-text-secondary">Never</span>}</Row>
+                  <Row icon={Folder} label="Folders">{k.allowed_dirs?.length ? <span className="break-all font-mono text-text-primary">{k.allowed_dirs.join(', ')}</span> : <span className="text-text-secondary">Deploy folders only</span>}</Row>
+                  <Row icon={Globe} label="Allowed IPs"><span className={cn('break-all', k.allowed_ips ? 'text-text-primary' : 'text-text-secondary')}>{k.allowed_ips ? k.allowed_ips.split(',').join(', ') : 'Any'}</span></Row>
+                  <Row icon={ShieldCheck} label="Expires"><span className={k.expires_at ? 'text-text-primary' : 'text-text-secondary'}>{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</span></Row>
                 </dl>
-                <div className="flex justify-end gap-0.5 border-t border-surface-border pt-3">
-                  {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Edit" onClick={() => setForm({ uuid: k.uuid, name: k.name, scopes: k.scopes, allowed_ips: k.allowed_ips || '', allowed_dirs: k.allowed_dirs || [], expires_at: k.expires_at ? k.expires_at.slice(0, 10) : '' })}><Pencil size={14} /></Button>}
-                  {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Revoke" onClick={() => setRev(k)}><Ban size={14} /></Button>}
-                  {canDelete('api-keys') && <Button variant="ghost" className="h-8 px-2" title="Delete" onClick={() => setDel(k)}><Trash2 size={14} className="text-danger" /></Button>}
-                </div>
+
+                <footer className="mt-auto flex items-center justify-between gap-2 border-t border-surface-border bg-surface-hover/30 px-3 py-2">
+                  <Button variant="ghost" className="h-8 gap-1.5 px-2 text-xs" onClick={() => setLogKey(k)}><ScrollText size={14} />Activity</Button>
+                  <div className="flex gap-0.5">
+                    {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Edit" onClick={() => setForm({ uuid: k.uuid, name: k.name, scopes: k.scopes, allowed_ips: k.allowed_ips || '', allowed_dirs: k.allowed_dirs || [], expires_at: k.expires_at ? k.expires_at.slice(0, 10) : '' })}><Pencil size={14} /></Button>}
+                    {canEdit('api-keys') && !k.revoked_at && <Button variant="ghost" className="h-8 px-2" title="Revoke" onClick={() => setRev(k)}><Ban size={14} /></Button>}
+                    {canDelete('api-keys') && <Button variant="ghost" className="h-8 px-2" title="Delete" onClick={() => setDel(k)}><Trash2 size={14} className="text-danger" /></Button>}
+                  </div>
+                </footer>
               </article>
             )
           })}
@@ -136,6 +150,8 @@ function ApiKeys() {
         )}
       </Modal>
 
+      <KeyLogs keyItem={logKey} onClose={() => setLogKey(null)} />
+
       <FolderBrowser open={picking} onClose={() => setPicking(false)} onSelect={(p) => { setForm((f) => (f.allowed_dirs.includes(p) ? f : { ...f, allowed_dirs: [...f.allowed_dirs, p] })); setPicking(false) }} />
 
       <Modal open={!!created} onClose={() => setCreated(null)} title="Your new API key" size="lg">
@@ -153,6 +169,16 @@ function ApiKeys() {
         message="Tools using this key stop working immediately. This cannot be undone." onConfirm={() => revoke.mutate(rev)} />
       <ConfirmDialog open={!!del} onClose={() => setDel(null)} loading={remove.isPending} title={`Delete ${del?.name}`}
         message="The key is removed and stops working immediately." onConfirm={() => remove.mutate(del)} />
+    </div>
+  )
+}
+
+function Row({ icon: Icon, label, children }) {
+  return (
+    <div className="flex items-start gap-2">
+      <Icon size={13} className="mt-0.5 shrink-0 text-text-tertiary" />
+      <dt className="w-20 shrink-0 text-text-secondary">{label}</dt>
+      <dd className="min-w-0 flex-1">{children}</dd>
     </div>
   )
 }

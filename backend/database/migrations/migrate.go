@@ -37,6 +37,7 @@ func Run(db *gorm.DB) {
 		&cronjobs.Run{},
 		&terminal.Template{},
 		&integrations.APIKey{},
+		&integrations.KeyLog{},
 	)
 	if err != nil {
 		log.Fatalf("migration failed: %v", err)

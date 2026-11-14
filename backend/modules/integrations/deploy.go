@@ -82,6 +82,8 @@ func (h *Deploy) RegisterRoutes(rg *gin.RouterGroup) {
 
 func audit(c *gin.Context, a activity_logs.ActivityAction, target string, detail gin.H) {
 	detail["via"] = "api-key"
+	op, _ := detail["op"].(string)
+	c.Set(ctxKeyNote, strings.TrimSpace(op+" "+target))
 	activity_logs.Audit(c, a, "deploy", target, detail)
 }
 

@@ -21,6 +21,7 @@ func (h *KeysHandler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, a
 	g := rg.Group("/api-keys")
 	g.GET("", guard(module, "view"), h.List)
 	g.POST("", guard(module, "create"), h.Create)
+	g.GET("/:uuid/logs", guard(module, "view"), h.Logs)
 	g.PUT("/:uuid", guard(module, "edit"), h.Update)
 	g.POST("/:uuid/revoke", guard(module, "edit"), h.Revoke)
 	g.DELETE("/:uuid", guard(module, "delete"), h.Delete)
@@ -33,6 +34,18 @@ func (h *KeysHandler) List(c *gin.Context) {
 		return
 	}
 	utils.Success(c, 200, "ok", gin.H{"keys": ks, "scopes": AllScopes})
+}
+
+func (h *KeysHandler) Logs(c *gin.Context) {
+	items, more, err := h.svc.Logs(c.Param("uuid"), parseUint(c.Query("before")), int(parseUint(c.Query("limit"))))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		utils.Error(c, 404, "not found")
+		return
+	} else if err != nil {
+		utils.Error(c, 500, "could not load the log")
+		return
+	}
+	utils.Success(c, 200, "ok", gin.H{"items": items, "has_more": more})
 }
 
 func (h *KeysHandler) Create(c *gin.Context) {

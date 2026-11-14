@@ -187,6 +187,7 @@ func (s *Service) Revoke(uuid string) error {
 }
 
 func (s *Service) Delete(uuid string) error {
+	s.db.Exec("DELETE FROM api_key_logs WHERE api_key_id IN (SELECT id FROM api_keys WHERE uuid = ?)", uuid)
 	res := s.db.Where("uuid = ?", uuid).Delete(&APIKey{})
 	if res.Error != nil {
 		return res.Error

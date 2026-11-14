@@ -40,5 +40,6 @@ func (s *Service) KeyAuth(scope string) gin.HandlerFunc {
 		c.Set(ctxKeyID, k.UUID.String())
 		c.Set(ctxKeyDirs, splitDirs(k.AllowedDirs))
 		c.Next()
+		s.record(c, k)
 	}
 }
