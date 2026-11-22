@@ -59,8 +59,9 @@ After an update run `migrate` and `seed` once to create the `api_keys` table and
 - Ubuntu or Debian, amd64 or arm64, a fresh server and root access. Tested on **Ubuntu 24.04 LTS**.
 - Do **not** install it next to another panel (aaPanel, BT, Plesk, ...): both would manage nginx, the firewall and cron.
 - Outbound internet access (apt, GitHub, Let's Encrypt).
-- **A domain** (e.g. `panel.example.com`) whose A record already points at the server, and port 80 reachable: RPanel is served
-  over HTTPS with a Let's Encrypt certificate and refuses access by bare IP.
+- **A domain** (recommended; e.g. `panel.example.com`) whose A record already points at the server, and port 80 reachable: RPanel is served
+  over HTTPS with a Let's Encrypt certificate and refuses access by bare IP. Without a domain (`NO_DOMAIN=1`) the panel is served
+  at `https://<server-ip>:<port>` with a self-signed certificate (the browser warns once); a domain can be added later.
 
 ## Install
 
@@ -70,7 +71,7 @@ On the server, as root, one command downloads the latest release, verifies its c
 curl -fsSL https://raw.githubusercontent.com/rinoaprisedo/rpanel/main/deploy/install-online.sh | sudo PANEL_DOMAIN=panel.example.com bash
 ```
 
-(Leave the variable out and the installer asks for the domain. No e-mail address is needed for Let's Encrypt.) Before installing anything it checks that the
+(Leave the variable out and the installer asks for the domain; an empty answer installs without one. No e-mail address is needed for Let's Encrypt.) Before installing anything it checks that the
 domain resolves to the server and that port 80 is free, so a wrong DNS record fails immediately instead of half-way.
 
 The installer installs nginx, PostgreSQL, Redis and certbot, creates the panel database, generates every secret,
@@ -82,7 +83,8 @@ Options are environment variables, e.g. `curl ... | sudo PANEL_DOMAIN=panel.exam
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PANEL_DOMAIN` | asked | **Required.** Host name of the panel; its A record must point at the server |
+| `PANEL_DOMAIN` | asked | Host name of the panel; its A record must point at the server |
+| `NO_DOMAIN` | off | `1` = install without a domain: IP URL + self-signed certificate; set a domain later in *Settings → Panel SSL*. Required instead of `PANEL_DOMAIN` when the install is not interactive |
 | `CERTBOT_EMAIL` | none | Optional e-mail for the Let's Encrypt account; not required |
 | `SKIP_DNS_CHECK` | off | `1` = do not require the domain to resolve to this server (NAT, Cloudflare proxy) |
 | `PANEL_PORT` | random 20000–59999 | Public HTTPS port of the panel |

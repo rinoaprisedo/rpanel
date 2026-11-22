@@ -4,10 +4,13 @@
 #   sudo ./deploy/install.sh
 #
 # Optional environment variables:
-#   PANEL_DOMAIN=<domain>   REQUIRED on a new install: host name of the panel (e.g. panel.example.com). Its
-#                           A record must already point at this server; a Let's Encrypt certificate is
-#                           obtained automatically and access by IP is refused. When not set the installer
-#                           asks for it. On an upgrade it migrates an old IP-based install.
+#   PANEL_DOMAIN=<domain>   host name of the panel (e.g. panel.example.com). Its A record must already
+#                           point at this server; a Let's Encrypt certificate is obtained automatically
+#                           and access by IP is refused. When neither this nor NO_DOMAIN is set the installer
+#                           asks (an empty answer = no domain). On an upgrade it migrates an old IP-based install.
+#   NO_DOMAIN=1             install without a domain: the panel is served at https://<server-ip>:<port>
+#                           with a self-signed certificate (browsers warn once). A domain can be added later
+#                           in the panel: Settings > Panel SSL. Websites still get Let's Encrypt as usual.
 #   CERTBOT_EMAIL=<email>   optional e-mail for the Let's Encrypt account (not needed; never asked)
 #   SKIP_DNS_CHECK=1        do not require the domain to resolve to this server (NAT, Cloudflare proxy, ...)
 #   PANEL_PORT=<port>       public HTTPS port of the panel (default: random 20000-59999)
@@ -39,7 +42,7 @@ if [ "${RPANEL_DETACHED:-0}" != "1" ] && [ "$(id -u)" -eq 0 ] && [ -f "$INSTALL_
   UPDATE_LOG="$INSTALL_DIR/update.log"; : > "$UPDATE_LOG"
   UNIT="rpanel-install-$$"
   ENV_ARGS=()
-  for v in PANEL_PORT ADMIN_EMAIL PUBLIC_HOST PANEL_ALLOWED_IPS INSTALL_DIR PANEL_DOMAIN CERTBOT_EMAIL SKIP_DNS_CHECK; do
+  for v in PANEL_PORT ADMIN_EMAIL PUBLIC_HOST PANEL_ALLOWED_IPS INSTALL_DIR PANEL_DOMAIN NO_DOMAIN CERTBOT_EMAIL SKIP_DNS_CHECK; do
     [ -n "${!v:-}" ] && ENV_ARGS+=(-E "$v=${!v}")
   done
   printf '\033[1;32m==>\033[0m You are updating from the panel itself: continuing in the background (log: %s)\n' "$UPDATE_LOG"
@@ -126,14 +129,25 @@ panel_domain_in_use() { # prints the domain recorded in panel-tls.conf (empty in
   sed -n 's/^# rpanel-panel-ssl mode=[^ ]* domain=\(.*\)$/\1/p' "$INSTALL_DIR/ssl/panel-tls.conf" 2>/dev/null | head -1
 }
 
-# Fresh installs need a domain and an e-mail; verify DNS and port 80 BEFORE installing anything.
+# Fresh installs either use a domain (verify DNS and port 80 BEFORE installing anything) or run
+# without one (NO_DOMAIN=1, or an empty answer to the prompt): IP + self-signed certificate.
 require_domain() {
   PANEL_DOMAIN="$(printf '%s' "${PANEL_DOMAIN:-}" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
-  if [ -z "$PANEL_DOMAIN" ]; then
-    ask "Panel domain (e.g. panel.example.com, its A record must point at this server): " PANEL_DOMAIN
-    PANEL_DOMAIN="$(printf '%s' "$PANEL_DOMAIN" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+  if [ "${NO_DOMAIN:-0}" = "1" ]; then
+    [ -z "$PANEL_DOMAIN" ] || die "PANEL_DOMAIN and NO_DOMAIN=1 contradict each other; set only one"
+  elif [ -z "$PANEL_DOMAIN" ]; then
+    if can_prompt; then
+      ask "Panel domain (e.g. panel.example.com, its A record must point at this server; leave empty to install without a domain): " PANEL_DOMAIN
+      PANEL_DOMAIN="$(printf '%s' "$PANEL_DOMAIN" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+      [ -n "$PANEL_DOMAIN" ] || NO_DOMAIN=1
+    else
+      die "no panel domain given. Run again with PANEL_DOMAIN=panel.example.com, or NO_DOMAIN=1 to install without a domain (IP + self-signed certificate)"
+    fi
   fi
-  [ -n "$PANEL_DOMAIN" ] || die "RPanel requires a domain. Point an A record (e.g. panel.example.com) at this server, then run again with PANEL_DOMAIN=panel.example.com"
+  if [ "${NO_DOMAIN:-0}" = "1" ]; then
+    warn "installing WITHOUT a domain: the panel uses a self-signed certificate (browsers show a warning) and stays reachable by IP. Set a domain later in Settings > Panel SSL."
+    return 0
+  fi
   printf '%s' "$PANEL_DOMAIN" | grep -Eq "$DOMAIN_RE" || die "invalid domain: $PANEL_DOMAIN (use a host name such as panel.example.com, not an IP address)"
   CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
   if [ -n "$CERTBOT_EMAIL" ]; then
@@ -414,7 +428,10 @@ else
 fi
 
 CERT_NOTE="The certificate is issued by Let's Encrypt and renews automatically."
-if issue_panel_cert "$PANEL_DOMAIN" "$CERTBOT_EMAIL"; then
+if [ "${NO_DOMAIN:-0}" = "1" ]; then
+  URL="https://$PUBLIC_HOST:$PANEL_PORT$ENTRANCE"
+  CERT_NOTE="No domain was set: the panel uses a self-signed certificate, so the browser shows a warning you must accept once. To get a trusted certificate, log in and open Settings > Panel SSL."
+elif issue_panel_cert "$PANEL_DOMAIN" "$CERTBOT_EMAIL"; then
   URL="https://$PANEL_DOMAIN:$PANEL_PORT$ENTRANCE"
 else
   URL="https://$PUBLIC_HOST:$PANEL_PORT$ENTRANCE"

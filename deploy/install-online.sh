@@ -9,8 +9,10 @@
 # RPANEL_MIRROR (base URL serving the release files, needs an explicit version),
 # FORCE=1 (reinstall even if that version is already running). Everything install.sh
 # understands (PANEL_DOMAIN, PANEL_PORT, ADMIN_EMAIL, ...) is passed through. A new install
-# needs PANEL_DOMAIN (a domain whose A record points at the server); it is asked for when missing:
+# needs PANEL_DOMAIN (a domain whose A record points at the server) or NO_DOMAIN=1 (IP + self-signed
+# certificate); it is asked for when both are missing:
 #   curl -fsSL .../install-online.sh | sudo PANEL_DOMAIN=panel.example.com bash
+#   curl -fsSL .../install-online.sh | sudo NO_DOMAIN=1 bash
 set -euo pipefail
 
 REPO="${RPANEL_REPO:-rinoaprisedo/rpanel}"
