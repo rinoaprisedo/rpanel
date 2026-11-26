@@ -11,14 +11,13 @@ import Modal from '../../components/ui/Modal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { cn } from '../../utils/cn'
 import Skeleton from '../../components/ui/Skeleton'
+import RunForm, { emptyRun } from './RunForm'
 import * as api from '../../api/docker'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
 const tabs = ['Overview', 'Containers', 'Images', 'Volumes', 'Compose']
 const ACTION_LABEL = { start: 'Starting…', stop: 'Stopping…', restart: 'Restarting…', remove: 'Removing…' }
 const ACTION_DONE = { start: 'Container started', stop: 'Container stopped', restart: 'Container restarted' }
-const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean)
-const emptyRun = { image: '', name: '', ports: '', env: '', volumes: '', restart: 'unless-stopped' }
 const sampleCompose = 'services:\n  web:\n    image: nginx:latest\n    ports:\n      - "8080:80"\n    restart: unless-stopped\n'
 
 function Docker() {
@@ -33,11 +32,11 @@ function Docker() {
   const containers = useQuery({ queryKey: ['d-containers'], queryFn: api.getContainers, enabled: !!ready && (tab === 'Containers' || tab === 'Overview'), refetchInterval: (q) => (tab === 'Overview' ? 1000 : 5000), retry: false })
   const overview = useQuery({ queryKey: ['d-overview'], queryFn: api.getDockerOverview, enabled: !!ready && tab === 'Overview', refetchInterval: 20000, retry: false })
   const stats = useQuery({ queryKey: ['d-stats'], queryFn: api.getDockerStats, enabled: !!ready && tab === 'Overview', refetchInterval: 1000, retry: false })
-  const images = useQuery({ queryKey: ['d-images'], queryFn: api.getImages, enabled: !!ready && tab === 'Images', retry: false })
+  const [runForm, setRunForm] = useState(null)
+  const images = useQuery({ queryKey: ['d-images'], queryFn: api.getImages, enabled: !!ready && (tab === 'Images' || !!runForm), retry: false })
   const volumes = useQuery({ queryKey: ['d-volumes'], queryFn: api.getVolumes, enabled: !!ready && tab === 'Volumes', retry: false })
   const projects = useQuery({ queryKey: ['d-projects'], queryFn: api.getProjects, enabled: tab === 'Compose', retry: false })
 
-  const [runForm, setRunForm] = useState(null)
   const [pullRef, setPullRef] = useState(null)
   const [logs, setLogs] = useState(null) // { title, text, reload }
   const [editor, setEditor] = useState(null) // { name, content, isNew }
@@ -156,28 +155,8 @@ function Docker() {
       )}
       {projOp.isPending && <p className="text-sm text-text-secondary">Running compose, this may take a while (images may be pulled)…</p>}
 
-      <Modal open={!!runForm} onClose={() => setRunForm(null)} title="Run container" size="lg">
-        {runForm && (
-          <form className="space-y-4" onSubmit={(e) => {
-            e.preventDefault()
-            run.mutate({ image: runForm.image, name: runForm.name, restart: runForm.restart, ports: lines(runForm.ports), env: lines(runForm.env), volumes: lines(runForm.volumes) })
-          }}>
-            <div className="grid grid-cols-2 gap-3">
-              <Input label="Image" placeholder="nginx:latest" value={runForm.image} onChange={(e) => setRunForm({ ...runForm, image: e.target.value })} autoFocus />
-              <Input label="Name (optional)" value={runForm.name} onChange={(e) => setRunForm({ ...runForm, name: e.target.value })} />
-            </div>
-            <Select label="Restart policy" value={runForm.restart} onChange={(e) => setRunForm({ ...runForm, restart: e.target.value })}>
-              <option value="no">no</option><option value="unless-stopped">unless-stopped</option><option value="always">always</option><option value="on-failure">on-failure</option>
-            </Select>
-            <Area label="Ports (one per line: host:container)" value={runForm.ports} onChange={(v) => setRunForm({ ...runForm, ports: v })} placeholder="8080:80" />
-            <Area label="Environment (one per line: KEY=value)" value={runForm.env} onChange={(v) => setRunForm({ ...runForm, env: v })} placeholder="MODE=production" />
-            <Area label="Volumes (one per line: /host:/container[:ro])" value={runForm.volumes} onChange={(v) => setRunForm({ ...runForm, volumes: v })} placeholder="/www/data:/data" />
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="secondary" onClick={() => setRunForm(null)}>Cancel</Button>
-              <Button type="submit" disabled={run.isPending || !runForm.image}>{run.isPending ? 'Starting (may pull image)…' : 'Run'}</Button>
-            </div>
-          </form>
-        )}
+      <Modal open={!!runForm} onClose={() => setRunForm(null)} title="Create container" size="xl">
+        {runForm && <RunForm form={runForm} setForm={setRunForm} images={images.data?.data} pending={run.isPending} onCancel={() => setRunForm(null)} onSubmit={(d) => run.mutate(d)} />}
       </Modal>
 
       <Modal open={pullRef !== null} onClose={() => setPullRef(null)} title="Pull image">
@@ -247,16 +226,6 @@ function ContainerActions({ c, busy, act, showLogs, setConfirm }) {
         : <Button variant="ghost" title="Start" aria-label={`Start ${c.name}`} disabled={!!busy} onClick={() => act.mutate({ id: c.id, action: 'start' })}>{spin('start', <Play size={14} />)}</Button>}
       <Button variant="ghost" title="Logs" aria-label={`Logs of ${c.name}`} onClick={() => showLogs(c.name, () => api.getContainerLogs(c.id))}><ScrollText size={14} /></Button>
       <Button variant="ghost" title="Remove" aria-label={`Remove ${c.name}`} disabled={!!busy} onClick={() => setConfirm({ cid: c.id, title: `Remove ${c.name}`, message: 'The container is force-removed. Data in anonymous volumes is lost.', run: () => api.removeContainer(c.id) })}>{spin('remove', <Trash2 size={14} className="text-danger" />)}</Button>
-    </div>
-  )
-}
-
-function Area({ label, value, onChange, placeholder }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium uppercase tracking-[.05em] text-text-secondary">{label}</label>
-      <textarea rows={3} spellCheck={false} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border-[1.5px] border-surface-border bg-field p-3 font-mono text-xs outline-none focus:border-primary" />
     </div>
   )
 }

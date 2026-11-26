@@ -25,6 +25,7 @@ var (
 	envKeyRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 	portRe      = regexp.MustCompile(`^(([0-9]{1,3}\.){3}[0-9]{1,3}:)?[0-9]{1,5}:[0-9]{1,5}(/(tcp|udp))?$`)
 	volumeRe    = regexp.MustCompile(`^(/[A-Za-z0-9._/-]*|[A-Za-z0-9][A-Za-z0-9_.-]*):/[A-Za-z0-9._/-]*(:ro|:rw)?$`)
+	labelKeyRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	restartRe   = regexp.MustCompile(`^(no|always|unless-stopped|on-failure(:[0-9]{1,3})?)$`)
 )
 
@@ -187,6 +188,65 @@ type RunInput struct {
 	Env     []string `json:"env"`     // KEY=VALUE
 	Volumes []string `json:"volumes"` // /host/path:/container/path[:ro] or named:/path
 	Restart string   `json:"restart"`
+
+	ExposeAll   bool     `json:"expose_all"`  // -P: publish every EXPOSEd port to a random host port
+	Networks    []string `json:"networks"`    // --network, first one only is honoured by docker run, the rest are connected after
+	Command     string   `json:"command"`     // arguments after the image, split shell-style (never run through a shell)
+	Entrypoint  string   `json:"entrypoint"`  // --entrypoint (executable only)
+	AutoRemove  bool     `json:"auto_remove"` // --rm
+	TTY         bool     `json:"tty"`         // -t
+	Interactive bool     `json:"interactive"` // -i
+	Privileged  bool     `json:"privileged"`  // --privileged
+	MinMemoryMB int      `json:"min_memory"`  // --memory-reservation, 0 = unset
+	CPUs        float64  `json:"cpus"`        // --cpus, 0 = unset
+	MemoryMB    int      `json:"memory"`      // --memory, 0 = unset
+	Labels      []string `json:"labels"`      // KEY=VALUE
+	Remark      string   `json:"remark"`      // stored as label panel.remark
+}
+
+// splitArgs splits s into argv words honouring single and double quotes and
+// backslash escapes. Nothing is expanded or executed.
+func splitArgs(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	var quote rune
+	has := false
+	esc := false
+	for _, r := range s {
+		switch {
+		case esc:
+			cur.WriteRune(r)
+			esc = false
+		case r == '\\' && quote != '\'':
+			esc = true
+			has = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '"' || r == '\'':
+			quote = r
+			has = true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			if has {
+				out = append(out, cur.String())
+				cur.Reset()
+				has = false
+			}
+		default:
+			cur.WriteRune(r)
+			has = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("%w: unclosed quote in command", ErrBadInput)
+	}
+	if has {
+		out = append(out, cur.String())
+	}
+	return out, nil
 }
 
 // BuildRunArgs validates the input and produces argv for `docker run -d`.
@@ -203,7 +263,9 @@ func BuildRunArgs(in RunInput) ([]string, error) {
 		}
 		args = append(args, "--name", in.Name)
 	}
-	if in.Restart != "" {
+	if in.AutoRemove {
+		args = append(args, "--rm") // docker refuses --rm together with a restart policy
+	} else if in.Restart != "" {
 		if !restartRe.MatchString(in.Restart) {
 			return nil, fmt.Errorf("%w: restart policy", ErrBadInput)
 		}
@@ -228,7 +290,70 @@ func BuildRunArgs(in RunInput) ([]string, error) {
 		}
 		args = append(args, "-v", v)
 	}
-	return append(args, in.Image), nil
+	if in.ExposeAll {
+		args = append(args, "-P")
+	}
+	for _, n := range in.Networks {
+		if !containerRe.MatchString(n) {
+			return nil, fmt.Errorf("%w: network %q", ErrBadInput, n)
+		}
+		args = append(args, "--network", n)
+		break // docker run takes a single network
+	}
+	for _, l := range in.Labels {
+		k, v, ok := strings.Cut(l, "=")
+		if !ok || !labelKeyRe.MatchString(k) || strings.ContainsAny(v, "\x00\r\n") {
+			return nil, fmt.Errorf("%w: label", ErrBadInput)
+		}
+		args = append(args, "--label", l)
+	}
+	if r := strings.TrimSpace(in.Remark); r != "" {
+		if len(r) > 500 || strings.ContainsAny(r, "\x00\r\n") {
+			return nil, fmt.Errorf("%w: remark", ErrBadInput)
+		}
+		args = append(args, "--label", "panel.remark="+r)
+	}
+	if in.TTY {
+		args = append(args, "-t")
+	}
+	if in.Interactive {
+		args = append(args, "-i")
+	}
+	if in.Privileged {
+		args = append(args, "--privileged")
+	}
+	if in.MinMemoryMB < 0 || in.MemoryMB < 0 || in.CPUs < 0 || in.MinMemoryMB > 1<<22 || in.MemoryMB > 1<<22 || in.CPUs > 1024 {
+		return nil, fmt.Errorf("%w: resource limit", ErrBadInput)
+	}
+	if in.MinMemoryMB > 0 {
+		args = append(args, "--memory-reservation", fmt.Sprintf("%dm", in.MinMemoryMB))
+	}
+	if in.MemoryMB > 0 {
+		args = append(args, "--memory", fmt.Sprintf("%dm", in.MemoryMB))
+	}
+	if in.CPUs > 0 {
+		args = append(args, "--cpus", strconv.FormatFloat(in.CPUs, 'f', -1, 64))
+	}
+	if ep := strings.TrimSpace(in.Entrypoint); ep != "" {
+		if strings.ContainsAny(ep, "\x00\r\n") {
+			return nil, fmt.Errorf("%w: entrypoint", ErrBadInput)
+		}
+		args = append(args, "--entrypoint", ep)
+	}
+	args = append(args, in.Image)
+	if strings.TrimSpace(in.Command) != "" {
+		words, err := splitArgs(in.Command)
+		if err != nil {
+			return nil, err
+		}
+		for _, w := range words {
+			if strings.ContainsRune(w, 0) {
+				return nil, fmt.Errorf("%w: command", ErrBadInput)
+			}
+		}
+		args = append(args, words...)
+	}
+	return args, nil
 }
 
 func (d *Docker) RunContainer(ctx context.Context, in RunInput) (string, error) {

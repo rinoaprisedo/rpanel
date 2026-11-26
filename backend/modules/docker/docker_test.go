@@ -284,3 +284,25 @@ func TestOverviewAndStats(t *testing.T) {
 		t.Errorf("parsed %+v", st[1])
 	}
 }
+
+func TestBuildRunArgsAdvanced(t *testing.T) {
+	args, err := BuildRunArgs(RunInput{
+		Image: "mariadb:11", Name: "db", Restart: "always", AutoRemove: true, ExposeAll: true,
+		Networks: []string{"appnet"}, Labels: []string{"k=v"}, Remark: "central",
+		TTY: true, Interactive: true, MinMemoryMB: 256, MemoryMB: 512, CPUs: 1.5,
+		Entrypoint: "/bin/sh", Command: `-c "echo 'a b'"`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "run -d --name db --rm -P --network appnet --label k=v --label panel.remark=central -t -i --memory-reservation 256m --memory 512m --cpus 1.5 --entrypoint /bin/sh mariadb:11 -c echo 'a b'"
+	if got := strings.Join(args, " "); got != want {
+		t.Fatalf("argv\n got %q\nwant %q", got, want)
+	}
+	if _, err := BuildRunArgs(RunInput{Image: "x", Command: `"unclosed`}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("unclosed quote: %v", err)
+	}
+	if _, err := BuildRunArgs(RunInput{Image: "x", MemoryMB: -1}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("negative memory: %v", err)
+	}
+}
