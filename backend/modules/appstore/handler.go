@@ -95,6 +95,21 @@ func (h *Handler) Uninstall(c *gin.Context) {
 	utils.Success(c, 202, "removing", nil)
 }
 
+// Update godoc
+// @Summary		Update an installed service in place (nginx: config backup, verification and rollback); poll the list for progress
+// @Tags			app-store
+// @Security		SessionCookie
+// @Router			/app-store/apps/{id}/update [post]
+func (h *Handler) Update(c *gin.Context) {
+	a, err := h.svc.Upgrade(c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	activity_logs.Audit(c, activity_logs.ActionUpdate, module, a.ID, gin.H{"op": "update"})
+	utils.Success(c, 202, "updating", nil)
+}
+
 // Control godoc
 // @Summary		Start, stop or restart an installed service (optionally {"version": "8.4"} for PHP)
 // @Tags			app-store

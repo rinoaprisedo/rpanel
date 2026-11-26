@@ -25,6 +25,8 @@ type App struct {
 	Multi bool
 	// Required apps back RPanel itself and can never be removed from here.
 	Required bool
+	// Upgrade makes the app updatable in place with a configuration backup and rollback (nginx).
+	Upgrade bool
 }
 
 const (
@@ -41,7 +43,7 @@ var Catalog = []App{
 	{
 		ID: "nginx", Name: "Nginx", Category: CatWeb, Icon: "Globe", Color: "#009639",
 		Description: "High-performance web server and reverse proxy. Serves every website you create in RPanel.",
-		Check:       []string{"nginx"}, Packages: []string{"nginx"}, Unit: "nginx", Required: true,
+		Check:       []string{"nginx"}, Packages: []string{"nginx"}, Unit: "nginx", Required: true, Upgrade: true,
 	},
 	{
 		ID: "php", Name: "PHP-FPM", Category: CatRuntime, Icon: "FileCode2", Color: "#777bb3",

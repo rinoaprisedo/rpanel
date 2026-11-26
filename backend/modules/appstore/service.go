@@ -24,6 +24,7 @@ const (
 	StateIdle       = "idle"
 	StateInstalling = "installing"
 	StateRemoving   = "removing"
+	StateUpdating   = "updating"
 	StateFailed     = "failed"
 )
 
@@ -52,7 +53,10 @@ type Item struct {
 	HasService  bool   `json:"has_service"`
 	Version     string `json:"version"`
 	// Candidate is the version apt will install; only set for unversioned apps that are not installed.
-	Candidate string        `json:"candidate,omitempty"`
+	Candidate string `json:"candidate,omitempty"`
+	// Updatable apps can be upgraded in place; Latest is set when apt offers a newer build than the installed one.
+	Updatable bool          `json:"updatable"`
+	Latest    string        `json:"latest,omitempty"`
 	Packages  []string      `json:"packages"`
 	Multi     bool          `json:"multi"`
 	Versions  []VersionItem `json:"versions,omitempty"`
@@ -142,6 +146,10 @@ func (s *Service) List(ctx context.Context) []Item {
 			s.fillVersions(ctx, &a, &it)
 		} else if !it.Installed {
 			it.Candidate = s.candidateVersion(ctx, a.Packages[0])
+		}
+		if a.Upgrade && it.Installed {
+			it.Updatable = true
+			it.Latest = s.newerBuild(ctx, &a)
 		}
 		if j, ok := snap[a.ID]; ok {
 			it.State, it.Error = j.state, j.err
@@ -350,7 +358,7 @@ func (s *Service) Uninstall(id, label string) (*App, error) {
 
 func (s *Service) start(a *App, state string, fn func(context.Context) error) (*App, error) {
 	s.mu.Lock()
-	if j, ok := s.jobs[a.ID]; ok && (j.state == StateInstalling || j.state == StateRemoving) {
+	if j, ok := s.jobs[a.ID]; ok && (j.state == StateInstalling || j.state == StateRemoving || j.state == StateUpdating) {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("%w: %s is busy", ErrBadState, a.Name)
 	}

@@ -7,5 +7,6 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup, guard func(menuPath, actio
 	g.GET("/apps", guard(module, "view"), h.List)
 	g.POST("/apps/:id/install", guard(module, "create"), h.Install)
 	g.POST("/apps/:id/uninstall", guard(module, "delete"), h.Uninstall)
+	g.POST("/apps/:id/update", guard(module, "edit"), h.Update)
 	g.POST("/apps/:id/service/:action", guard(module, "edit"), h.Control)
 }

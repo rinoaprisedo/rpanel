@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import * as Icons from 'lucide-react'
-import { Search, Download, Trash2, Lock, LoaderCircle, AlertTriangle, Store, ArrowRight, Plus, ShieldCheck, Play, Square, RotateCw } from 'lucide-react'
+import { Search, Download, Trash2, Lock, LoaderCircle, AlertTriangle, Store, ArrowRight, Plus, ShieldCheck, Play, Square, RotateCw, ArrowUpCircle } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
@@ -14,7 +14,7 @@ import { cn } from '../../utils/cn'
 import * as api from '../../api/appStore'
 
 const errMsg = (e) => e.response?.data?.message || 'Operation failed'
-const busy = (a) => a.state === 'installing' || a.state === 'removing'
+const busy = (a) => a.state === 'installing' || a.state === 'removing' || a.state === 'updating'
 const STATUS = [['all', 'All'], ['installed', 'Installed'], ['available', 'Available']]
 
 function AppIcon({ app }) {
@@ -29,13 +29,14 @@ function AppIcon({ app }) {
 function StatusBadge({ app }) {
   if (app.state === 'installing') return <Badge variant="primary">Installing…</Badge>
   if (app.state === 'removing') return <Badge variant="warning">Removing…</Badge>
+  if (app.state === 'updating') return <Badge variant="primary">Updating…</Badge>
   if (app.state === 'failed') return <Badge variant="danger">Failed</Badge>
   if (!app.installed) return <Badge>Not installed</Badge>
   if (!app.has_service) return <Badge variant="success">Installed</Badge>
   return app.running ? <Badge variant="success">Running</Badge> : <Badge variant="warning">Stopped</Badge>
 }
 
-function AppCard({ app, onInstall, onRemove, onControl, onOpenDatabases, pending }) {
+function AppCard({ app, onInstall, onRemove, onControl, onUpdate, onOpenDatabases, pending }) {
   const working = busy(app)
   const versioned = !!app.versions?.length
   const version = app.installed ? app.version : app.candidate
@@ -79,6 +80,13 @@ function AppCard({ app, onInstall, onRemove, onControl, onOpenDatabases, pending
         </div>
       )}
 
+      {app.updatable && app.latest && app.state !== 'updating' && (
+        <div className="mt-2 flex gap-2 rounded-md bg-warning-bg p-2 text-xs text-warning">
+          <ArrowUpCircle size={13} className="mt-px shrink-0" />
+          <span className="break-words">Update available: <span className="font-mono">{app.latest}</span></span>
+        </div>
+      )}
+
       {app.state === 'failed' && (
         <div className="mt-2 flex gap-2 rounded-md bg-danger-bg p-2 text-xs text-danger">
           <AlertTriangle size={13} className="mt-px shrink-0" />
@@ -98,7 +106,7 @@ function AppCard({ app, onInstall, onRemove, onControl, onOpenDatabases, pending
             <Button variant="ghost" className="h-8 px-2 text-xs" onClick={onOpenDatabases}>Databases<ArrowRight size={12} /></Button>
           )}
           {working ? (
-            <Button variant="secondary" className="h-8 px-3 text-xs" disabled><LoaderCircle size={13} className="animate-spin" />{app.state === 'installing' ? 'Installing' : 'Removing'}</Button>
+            <Button variant="secondary" className="h-8 px-3 text-xs" disabled><LoaderCircle size={13} className="animate-spin" />{{ installing: 'Installing', removing: 'Removing', updating: 'Updating' }[app.state]}</Button>
           ) : !app.installed ? (
             <Button className="h-8 px-3 text-xs" disabled={pending} onClick={() => onInstall(app)}><Download size={13} />{app.state === 'failed' ? 'Retry' : 'Install'}</Button>
           ) : (
@@ -112,6 +120,9 @@ function AppCard({ app, onInstall, onRemove, onControl, onOpenDatabases, pending
                 ) : (
                   <Button variant="secondary" className="h-8 px-2.5 text-xs" disabled={pending} onClick={() => onControl(app, 'start')}><Play size={13} />Start</Button>
                 )
+              )}
+              {app.updatable && (
+                <Button variant={app.latest ? 'primary' : 'secondary'} className="h-8 px-2.5 text-xs" disabled={pending} title={app.latest ? `Update to ${app.latest}` : 'Check for a newer build and update'} onClick={() => onUpdate(app)}><ArrowUpCircle size={13} />{app.latest ? 'Update' : 'Check update'}</Button>
               )}
               {app.multi && <Button variant="secondary" className="h-8 px-2.5 text-xs" disabled={pending} onClick={() => onInstall(app)}><Plus size={13} />Add version</Button>}
               {!app.required && <Button variant="ghost" className="h-8 px-2.5 text-xs !text-danger" disabled={pending} onClick={() => onRemove(app)}><Trash2 size={13} />Uninstall</Button>}
@@ -202,6 +213,37 @@ function RemoveDialog({ app, loading, onClose, onConfirm }) {
   )
 }
 
+function UpdateDialog({ app, loading, onClose, onConfirm }) {
+  if (!app) return null
+  return (
+    <Modal open onClose={onClose} title={`Update ${app.name}?`} size="sm">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between rounded-md bg-surface-hover px-3 py-2 text-sm">
+          <span className="text-text-secondary">Installed</span>
+          <span className="font-mono font-medium text-text-primary">v{app.version}</span>
+        </div>
+        {app.latest && (
+          <div className="flex items-center justify-between rounded-md bg-surface-hover px-3 py-2 text-sm">
+            <span className="text-text-secondary">Available</span>
+            <span className="font-mono font-medium text-text-primary">{app.latest}</span>
+          </div>
+        )}
+        <ul className="list-disc space-y-1 pl-5 text-xs leading-5 text-text-secondary">
+          <li>The configuration is checked first; the update is refused when it is already invalid.</li>
+          <li>A backup of <span className="font-mono">/etc/nginx</span> is saved in <span className="font-mono">/var/backups/rpanel</span> (last 5 are kept).</li>
+          <li>Your configuration files are never overwritten.</li>
+          <li>If the new version rejects the configuration or does not start, the backup is restored automatically.</li>
+          <li>Websites are unavailable for about a second while nginx restarts.</li>
+        </ul>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button onClick={() => onConfirm(app)} disabled={loading}>{loading ? 'Starting…' : 'Update'}</Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function AppStore() {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -210,6 +252,7 @@ function AppStore() {
   const [category, setCategory] = useState('All')
   const [removing, setRemoving] = useState(null)
   const [installing, setInstalling] = useState(null)
+  const [updating, setUpdating] = useState(null)
   const prev = useRef({})
 
   const { data, isLoading, isError } = useQuery({
@@ -223,10 +266,10 @@ function AppStore() {
   useEffect(() => {
     apps.forEach((a) => {
       const was = prev.current[a.id]
-      if (was && (was === 'installing' || was === 'removing') && !busy(a)) {
+      if (was && (was === 'installing' || was === 'removing' || was === 'updating') && !busy(a)) {
         if (a.state === 'failed') toast.error(`${a.name}: ${a.error || 'failed'}`)
         else {
-          toast.success(was === 'installing' ? `${a.name} installed` : `${a.name} uninstalled`)
+          toast.success(`${a.name} ${{ installing: 'installed', removing: 'uninstalled', updating: 'update finished' }[was]}`)
           qc.invalidateQueries({ queryKey: ['fail2ban'] }) // shows/hides the Fail2ban and Supervisor sidebar entries
           qc.invalidateQueries({ queryKey: ['supervisor'] })
         }
@@ -245,6 +288,11 @@ function AppStore() {
     mutationFn: ({ app, action, version }) => api.controlApp(app.id, action, version),
     onSuccess: (_, { app, action, version }) => { toast.success(`${app.name}${version ? ` ${version}` : ''} ${{ start: 'started', stop: 'stopped', restart: 'restarted' }[action]}`); refresh() },
     onError: (e) => { toast.error(errMsg(e)); refresh() },
+  })
+  const update = useMutation({
+    mutationFn: ({ app }) => api.updateApp(app.id),
+    onSuccess: () => { setUpdating(null); refresh() },
+    onError: (e) => { toast.error(errMsg(e)); setUpdating(null); refresh() },
   })
   const remove = useMutation({
     mutationFn: ({ app, version }) => api.uninstallApp(app.id, version),
@@ -323,12 +371,13 @@ function AppStore() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {shown.map((a) => (
-            <AppCard key={a.id} app={a} pending={install.isPending || remove.isPending || control.isPending} onInstall={setInstalling} onRemove={setRemoving} onControl={(app, action, version) => control.mutate({ app, action, version })} onOpenDatabases={() => navigate('/databases')} />
+            <AppCard key={a.id} app={a} pending={install.isPending || remove.isPending || control.isPending || update.isPending} onInstall={setInstalling} onUpdate={setUpdating} onRemove={setRemoving} onControl={(app, action, version) => control.mutate({ app, action, version })} onOpenDatabases={() => navigate('/databases')} />
           ))}
         </div>
       )}
 
       <InstallDialog app={installing} loading={install.isPending} onClose={() => setInstalling(null)} onConfirm={(app, version) => install.mutate({ app, version })} />
+      <UpdateDialog app={updating} loading={update.isPending} onClose={() => setUpdating(null)} onConfirm={(app) => update.mutate({ app })} />
       <RemoveDialog app={removing} loading={remove.isPending} onClose={() => setRemoving(null)} onConfirm={(app, version) => remove.mutate({ app, version })} />
     </div>
   )
