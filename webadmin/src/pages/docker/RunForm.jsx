@@ -11,7 +11,7 @@ export const emptyRun = {
   image: '', name: '', exposeAll: false, ports: [{ ip: '', host: '', container: '', proto: 'tcp' }],
   restart: 'unless-stopped', networks: [''], mounts: [{ src: '', dst: '', mode: 'rw' }],
   command: '', entrypoint: '', autoRemove: false, tty: false, interactive: false, privileged: false,
-  minMemory: 0, cpus: 0, memory: 0, labels: '', env: '', remark: '',
+  minMemory: 0, cpus: 0, memory: 0, labels: '', env: '', remark: '', owner: '',
 }
 
 // Turns the form state into the payload accepted by POST /docker/containers.
@@ -23,7 +23,7 @@ export function runPayload(f) {
     image: f.image.trim(), name: f.name.trim(), restart: f.restart, ports, volumes, env: lines(f.env), labels: lines(f.labels),
     expose_all: f.exposeAll, networks: f.networks.map((n) => n.trim()).filter(Boolean), command: f.command, entrypoint: f.entrypoint,
     auto_remove: f.autoRemove, tty: f.tty, interactive: f.interactive, privileged: f.privileged,
-    min_memory: Number(f.minMemory) || 0, cpus: Number(f.cpus) || 0, memory: Number(f.memory) || 0, remark: f.remark,
+    min_memory: Number(f.minMemory) || 0, cpus: Number(f.cpus) || 0, memory: Number(f.memory) || 0, remark: f.remark, owner: f.owner.trim(),
   }
 }
 
@@ -68,7 +68,7 @@ function Limit({ value, max, unit, onChange }) {
   )
 }
 
-function RunForm({ form, setForm, images, onSubmit, onCancel, pending }) {
+function RunForm({ form, setForm, images, volumes, onSubmit, onCancel, pending }) {
   const [more, setMore] = useState(false)
   const set = (patch) => setForm({ ...form, ...patch })
   const setList = (key, i, patch) => set({ [key]: form[key].map((x, j) => (j === i ? { ...x, ...patch } : x)) })
@@ -136,13 +136,25 @@ function RunForm({ form, setForm, images, onSubmit, onCancel, pending }) {
             <div className="space-y-2">
               {form.mounts.map((m, i) => (
                 <div key={i} className="grid grid-cols-[1fr_1fr_90px_auto] items-center gap-2">
-                  <Input placeholder="Host path or volume" value={m.src} onChange={(e) => setList('mounts', i, { src: e.target.value })} />
+                  <Input list="run-volumes" placeholder="Host path or volume name" value={m.src} onChange={(e) => setList('mounts', i, { src: e.target.value })} />
                   <Input placeholder="Container path" value={m.dst} onChange={(e) => setList('mounts', i, { dst: e.target.value })} />
                   <Select value={m.mode} onChange={(e) => setList('mounts', i, { mode: e.target.value })}><option value="rw">rw</option><option value="ro">ro</option></Select>
                   <Button type="button" variant="ghost" aria-label="Remove mount" onClick={() => del('mounts', i)}><Trash2 size={14} className="text-danger" /></Button>
                 </div>
               ))}
+              <datalist id="run-volumes">{(volumes || []).map((v) => <option key={v.name} value={v.name} />)}</datalist>
               <div><Button type="button" variant="secondary" onClick={() => set({ mounts: [...form.mounts, { src: '', dst: '', mode: 'rw' }] })}><Plus size={14} />Add</Button></div>
+            </div>
+          </Row>
+          <Row label="Folder owner">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Input className="w-40" placeholder="uid:gid, e.g. 999:999" value={form.owner} onChange={(e) => set({ owner: e.target.value })} />
+                <Button type="button" variant="secondary" onClick={() => set({ owner: '999:999' })}>mysql / postgres (999)</Button>
+                <Button type="button" variant="secondary" onClick={() => set({ owner: '27:27' })}>mariadb ubi (27)</Button>
+                <Button type="button" variant="secondary" onClick={() => set({ owner: '' })}>None</Button>
+              </div>
+              <p className="text-xs text-text-secondary">Creates the host folders of your mounts if missing and gives them to this user before starting, so databases can write there (fixes “Permission denied”). Named volumes need nothing. System folders are refused.</p>
             </div>
           </Row>
           <Row label="Command"><Input placeholder="Overrides the image CMD" value={form.command} onChange={(e) => set({ command: e.target.value })} /></Row>

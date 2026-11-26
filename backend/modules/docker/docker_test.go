@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -304,5 +305,24 @@ func TestBuildRunArgsAdvanced(t *testing.T) {
 	}
 	if _, err := BuildRunArgs(RunInput{Image: "x", MemoryMB: -1}); !errors.Is(err, ErrBadInput) {
 		t.Fatalf("negative memory: %v", err)
+	}
+}
+
+func TestPrepareMounts(t *testing.T) {
+	dir := t.TempDir() + "/mariadb"
+	uid, gid := os.Getuid(), os.Getgid()
+	if err := prepareMounts(RunInput{Owner: fmt.Sprintf("%d:%d", uid, gid), Volumes: []string{dir + ":/var/lib/mysql", "named:/x"}}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		t.Fatalf("directory not created: %v", err)
+	}
+	for _, v := range []string{"/etc:/x", "/:/x", "/opt/rpanel/data:/x", "/var/lib/docker:/x", "/home/u:/x"} {
+		if err := prepareMounts(RunInput{Owner: "1:1", Volumes: []string{v}}); !errors.Is(err, ErrBadInput) {
+			t.Errorf("%s must be refused, got %v", v, err)
+		}
+	}
+	if err := prepareMounts(RunInput{Owner: "root", Volumes: []string{dir + ":/x"}}); !errors.Is(err, ErrBadInput) {
+		t.Fatalf("bad owner: %v", err)
 	}
 }

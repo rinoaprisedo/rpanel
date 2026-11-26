@@ -34,7 +34,7 @@ function Docker() {
   const stats = useQuery({ queryKey: ['d-stats'], queryFn: api.getDockerStats, enabled: !!ready && tab === 'Overview', refetchInterval: 1000, retry: false })
   const [runForm, setRunForm] = useState(null)
   const images = useQuery({ queryKey: ['d-images'], queryFn: api.getImages, enabled: !!ready && (tab === 'Images' || !!runForm), retry: false })
-  const volumes = useQuery({ queryKey: ['d-volumes'], queryFn: api.getVolumes, enabled: !!ready && tab === 'Volumes', retry: false })
+  const volumes = useQuery({ queryKey: ['d-volumes'], queryFn: api.getVolumes, enabled: !!ready && (tab === 'Volumes' || !!runForm), retry: false })
   const projects = useQuery({ queryKey: ['d-projects'], queryFn: api.getProjects, enabled: tab === 'Compose', retry: false })
 
   const [pullRef, setPullRef] = useState(null)
@@ -156,7 +156,7 @@ function Docker() {
       {projOp.isPending && <p className="text-sm text-text-secondary">Running compose, this may take a while (images may be pulled)…</p>}
 
       <Modal open={!!runForm} onClose={() => setRunForm(null)} title="Create container" size="xl">
-        {runForm && <RunForm form={runForm} setForm={setRunForm} images={images.data?.data} pending={run.isPending} onCancel={() => setRunForm(null)} onSubmit={(d) => run.mutate(d)} />}
+        {runForm && <RunForm form={runForm} setForm={setRunForm} images={images.data?.data} volumes={volumes.data?.data} pending={run.isPending} onCancel={() => setRunForm(null)} onSubmit={(d) => run.mutate(d)} />}
       </Modal>
 
       <Modal open={pullRef !== null} onClose={() => setPullRef(null)} title="Pull image">

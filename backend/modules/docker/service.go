@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -202,6 +205,63 @@ type RunInput struct {
 	MemoryMB    int      `json:"memory"`      // --memory, 0 = unset
 	Labels      []string `json:"labels"`      // KEY=VALUE
 	Remark      string   `json:"remark"`      // stored as label panel.remark
+	Owner       string   `json:"owner"`       // uid:gid to chown host-path mounts to before starting, "" = leave alone
+}
+
+var ownerRe = regexp.MustCompile(`^([0-9]{1,10}):([0-9]{1,10})$`)
+
+// protectedRoots are never created into or chowned, whatever the user mounts.
+var protectedRoots = map[string]bool{
+	"bin": true, "boot": true, "dev": true, "etc": true, "lib": true, "lib32": true, "lib64": true, "proc": true,
+	"root": true, "run": true, "sbin": true, "sys": true, "usr": true, "home": true,
+}
+
+// protectedTrees are paths whose ownership the panel or docker itself relies on.
+var protectedTrees = []string{"/opt/rpanel", "/var/lib/docker", "/var/lib/containerd", "/var/lib/rpanel", "/var/lib/postgresql", "/var/spool", "/var/log"}
+
+func underAny(p string, roots []string) bool {
+	for _, r := range roots {
+		if p == r || strings.HasPrefix(p, r+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// prepareMounts creates missing host directories of bind mounts and gives them
+// to in.Owner (recursively), so images that run as an unprivileged user
+// (mysql, postgres, ...) can write to them.
+func prepareMounts(in RunInput) error {
+	m := ownerRe.FindStringSubmatch(in.Owner)
+	if m == nil {
+		return fmt.Errorf("%w: owner must look like 999:999", ErrBadInput)
+	}
+	uid, _ := strconv.Atoi(m[1])
+	gid, _ := strconv.Atoi(m[2])
+	for _, v := range in.Volumes {
+		src, _, _ := strings.Cut(v, ":")
+		if !strings.HasPrefix(src, "/") {
+			continue // named volume: docker sets its permissions
+		}
+		src = filepath.Clean(src)
+		parts := strings.Split(strings.Trim(src, "/"), "/")
+		if len(parts) < 2 || protectedRoots[parts[0]] || underAny(src, protectedTrees) {
+			return fmt.Errorf("%w: refusing to change owner of %s", ErrBadInput, src)
+		}
+		if err := os.MkdirAll(src, 0o755); err != nil {
+			return err
+		}
+		err := filepath.WalkDir(src, func(path string, _ fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			return os.Lchown(path, uid, gid)
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // splitArgs splits s into argv words honouring single and double quotes and
@@ -360,6 +420,11 @@ func (d *Docker) RunContainer(ctx context.Context, in RunInput) (string, error) 
 	args, err := BuildRunArgs(in)
 	if err != nil {
 		return "", err
+	}
+	if strings.TrimSpace(in.Owner) != "" {
+		if err := prepareMounts(in); err != nil {
+			return "", err
+		}
 	}
 	res, err := d.cli(ctx, 15*time.Minute, args...) // may pull the image first
 	if err != nil {
