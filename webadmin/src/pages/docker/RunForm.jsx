@@ -150,8 +150,7 @@ function RunForm({ form, setForm, images, volumes, onSubmit, onCancel, pending }
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Input className="w-40" placeholder="uid:gid, e.g. 999:999" value={form.owner} onChange={(e) => set({ owner: e.target.value })} />
-                <Button type="button" variant="secondary" onClick={() => set({ owner: '999:999' })}>mysql / postgres (999)</Button>
-                <Button type="button" variant="secondary" onClick={() => set({ owner: '27:27' })}>mariadb ubi (27)</Button>
+                <Button type="button" variant="secondary" onClick={() => set({ owner: '999:999' })}>mysql / mariadb / postgres (999)</Button>
                 <Button type="button" variant="secondary" onClick={() => set({ owner: '' })}>None</Button>
               </div>
               <p className="text-xs text-text-secondary">Creates the host folders of your mounts if missing and gives them to this user before starting, so databases can write there (fixes “Permission denied”). Named volumes need nothing. System folders are refused.</p>
