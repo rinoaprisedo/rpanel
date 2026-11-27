@@ -52,7 +52,7 @@ func lowerBetter(v, good, bad float64) float64 {
 
 // buildHealth scores the server from what actually makes a machine feel slow:
 // sustained CPU use, run-queue pressure (load per core), memory/swap pressure,
-// a nearly full disk, a rising 5xx rate and stopped services. Factors with no
+// a nearly full disk and stopped services (the 5xx rate is an app problem, not machine speed, so it stays out). Factors with no
 // data are left out rather than counted as perfect. One failing factor caps the
 // total so a healthy average cannot hide a real problem.
 func buildHealth(in insightInput) Health {
@@ -104,11 +104,6 @@ func buildHealth(in insightInput) Health {
 		add("disk", "Disk", fmt.Sprintf("%s free · %s", human(worst.Total-worst.Used), worst.Mount), worst.Percent, lowerBetter(worst.Percent, 80, 98), 15, "Fullest disk. Fine below 80%, writes start failing near 100%")
 	}
 
-	if t := in.Traffic1h; t != nil && t.Available && t.Totals.Requests >= 20 {
-		rate := float64(t.Totals.ServerErr) / float64(t.Totals.Requests) * 100
-		add("errors", "Server errors", fmt.Sprintf("%.1f%% 5xx", rate), rate, lowerBetter(rate, 0.5, 5), 10, "Share of 5xx responses in the last hour. Fine below 0.5%, bad at 5%")
-	}
-
 	if len(in.Services) > 0 {
 		down := 0
 		for _, s := range in.Services {
@@ -153,4 +148,38 @@ func buildHealth(in insightInput) Health {
 	}
 	sort.SliceStable(h.Factors, func(i, j int) bool { return h.Factors[i].Score < h.Factors[j].Score })
 	return h
+}
+
+// ErrorHealth is the small second speedometer: how many of the last hour's requests failed with 5xx.
+// It is deliberately not part of the server score, because it says something about the apps, not the machine.
+type ErrorHealth struct {
+	Known    bool    `json:"known"`
+	Requests int     `json:"requests"`
+	Errors   int     `json:"errors"`
+	Rate     float64 `json:"rate"` // percent of requests that were 5xx
+	Score    int     `json:"score"`
+	Level    string  `json:"level"`
+	Label    string  `json:"label"`
+}
+
+// buildErrorHealth reads the 5xx share of the last hour: fine below 0.5%, bad at 5%.
+// With fewer than 20 requests there is nothing meaningful to judge, so it stays unknown.
+func buildErrorHealth(t *Traffic) ErrorHealth {
+	if t == nil || !t.Available || t.Totals.Requests < 20 {
+		return ErrorHealth{}
+	}
+	rate := float64(t.Totals.ServerErr) / float64(t.Totals.Requests) * 100
+	e := ErrorHealth{Known: true, Requests: t.Totals.Requests, Errors: t.Totals.ServerErr, Rate: math.Round(rate*10) / 10}
+	e.Score = int(math.Round(lowerBetter(rate, 0.5, 5)))
+	switch {
+	case e.Score >= 85:
+		e.Level, e.Label = HealthSmooth, "No errors to speak of"
+	case e.Score >= 65:
+		e.Level, e.Label = HealthFair, "Some errors"
+	case e.Score >= 40:
+		e.Level, e.Label = HealthSlow, "Many errors"
+	default:
+		e.Level, e.Label = HealthStruggle, "Mostly failing"
+	}
+	return e
 }

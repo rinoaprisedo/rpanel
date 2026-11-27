@@ -1,6 +1,6 @@
 // Client-side twin of backend/modules/dashboard/health.go, so the gauge can follow
 // the 3-second overview poll. Keep the thresholds and weights in sync with it.
-// Factors that need slower probes (5xx rate from logs, service status) are taken
+// Factors that need slower probes (service status) are taken
 // from the server's own verdict.
 
 import { formatBytes } from './format'
@@ -47,7 +47,7 @@ export function computeHealth(o, recent = [], server) {
   }
 
   // Slow-probe factors: keep the server's numbers.
-  for (const f of server?.factors || []) if (f.id === 'errors' || f.id === 'services') factors.push(f)
+  for (const f of server?.factors || []) if (f.id === 'services') factors.push(f)
 
   let sum = 0
   let wsum = 0
@@ -66,4 +66,14 @@ export function computeHealth(o, recent = [], server) {
     bottleneck: lowest && lowest.score < 85 ? lowest.id : '',
     factors: [...factors].sort((a, b) => a.score - b.score),
   }
+}
+
+// Incoming traffic on a log scale so a quiet server rests at the left and a busy one sweeps right:
+// 1 KB/s or less is 0, 100 MB/s or more is 100 (10 KB/s = 20, 1 MB/s = 60, 10 MB/s = 80).
+const TRAFFIC_FLOOR = 1024
+const TRAFFIC_CEIL = 100 * 1024 * 1024
+export function trafficGauge(bps = 0) {
+  const score = Math.round(Math.max(0, Math.min(100, (100 * Math.log(Math.max(bps, 1) / TRAFFIC_FLOOR)) / Math.log(TRAFFIC_CEIL / TRAFFIC_FLOOR))))
+  const label = score < 20 ? 'Quiet' : score < 50 ? 'Light traffic' : score < 75 ? 'Busy' : 'Heavy traffic'
+  return { score, label, value: `${formatBytes(bps)}/s` }
 }

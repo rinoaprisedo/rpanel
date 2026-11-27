@@ -13,7 +13,8 @@ import { tooltipTime, compact } from '../../components/charts/scale'
 import { loadColor } from '../../components/charts/severity'
 import { AttentionButton } from '../dashboard/Insights'
 import HealthCard from '../dashboard/HealthCard'
-import { computeHealth } from '../../utils/health'
+import HealthGauge from '../dashboard/HealthGauge'
+import { computeHealth, trafficGauge } from '../../utils/health'
 import usePermission from '../../hooks/usePermission'
 import { cn } from '../../utils/cn'
 import { getOverview, getHistory, getHistoryRange, getProcesses, getInsights } from '../../api/dashboard'
@@ -22,6 +23,27 @@ import { formatBytes, formatUptime } from '../../utils/format'
 import { Section, Panel, RangeBar, rangeLabel, Facts, HISTORY_RANGES } from './parts'
 
 const POLL = 3000
+
+// Small speedometer for the 5xx share of the last hour. Not part of the server score: it speaks for the apps, not the machine.
+function ErrorTile({ errors }) {
+  const known = errors?.known
+  return (
+    <div className="flex min-w-0 flex-col rounded-lg border border-surface-border bg-surface-card p-4" title="Share of requests answered with 5xx in the last hour. Fine below 0.5%, bad at 5%. Not part of the server score.">
+      <p className="text-xs font-medium text-text-secondary">Server errors (5xx)</p>
+      {known ? (
+        <>
+          <HealthGauge compact score={errors.score} level={errors.level} label={errors.label} leftLabel="Many" rightLabel="None" valueText={`${errors.rate}%`} ariaLabel={`Server errors ${errors.rate}% of requests: ${errors.label}`} className="mt-1" />
+          <p className="mt-1.5 truncate text-center text-xs text-text-tertiary">{errors.errors.toLocaleString()} of {errors.requests.toLocaleString()} requests · 1h</p>
+        </>
+      ) : (
+        <>
+          <p className="mt-1.5 text-[26px] font-semibold leading-none text-text-primary">—</p>
+          <p className="mt-2 text-xs text-text-tertiary">Not enough traffic in the last hour to judge</p>
+        </>
+      )}
+    </div>
+  )
+}
 
 function MonitorServer() {
   const navigate = useNavigate()
@@ -64,6 +86,7 @@ function MonitorServer() {
       {insights?.health && health ? (
         <HealthCard
           health={health}
+          traffic={trafficGauge(o.net_rx_bps)}
           hostname={o.hostname}
           subtitle={`${o.os} · kernel ${o.kernel} · ${o.arch}`}
           right={
@@ -85,7 +108,8 @@ function MonitorServer() {
       ) : <Skeleton className="h-64 w-full" />}
 
       {/* ---- more live resources ---- */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <ErrorTile errors={insights?.errors} />
         <StatTile label="Network" value={`${formatBytes(o.net_rx_bps)}/s`} sub={`↑ ${formatBytes(o.net_tx_bps)}/s · total ↓ ${formatBytes(o.net_rx_total)} ↑ ${formatBytes(o.net_tx_total)}`} trend={live.map((p) => p.net_rx)} />
         <StatTile label="Disk I/O" value={`${formatBytes(o.disk_read_bps)}/s`} sub={`read · write ${formatBytes(o.disk_write_bps)}/s`} trend={live.map((p) => (p.disk_read || 0) + (p.disk_write || 0))} />
         <StatTile label="Swap" value={o.swap_total ? ((o.swap_used / o.swap_total) * 100).toFixed(0) : '—'} unit={o.swap_total ? '%' : ''} meter={o.swap_total ? (o.swap_used / o.swap_total) * 100 : undefined} warnAt={30} critAt={60} sub={o.swap_total ? `${formatBytes(o.swap_used)} of ${formatBytes(o.swap_total)}` : 'No swap configured'} />

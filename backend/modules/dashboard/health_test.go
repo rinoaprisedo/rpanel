@@ -83,8 +83,32 @@ func TestHealthSkipsFactorsWithoutData(t *testing.T) {
 	in.Services = nil
 	in.Overview.Disks = nil
 	for _, f := range buildHealth(in).Factors {
-		if f.ID == "services" || f.ID == "disk" || f.ID == "errors" {
+		if f.ID == "services" || f.ID == "disk" {
 			t.Errorf("factor %s should be absent", f.ID)
 		}
+	}
+}
+
+func TestErrorHealth(t *testing.T) {
+	mk := func(req, errs int) *Traffic {
+		return &Traffic{Available: true, Totals: Totals{Requests: req, ServerErr: errs}}
+	}
+	if e := buildErrorHealth(mk(10, 10)); e.Known {
+		t.Errorf("too few requests must stay unknown: %+v", e)
+	}
+	if e := buildErrorHealth(nil); e.Known {
+		t.Errorf("no traffic data must stay unknown: %+v", e)
+	}
+	if e := buildErrorHealth(mk(1000, 2)); e.Level != HealthSmooth || e.Score != 100 {
+		t.Errorf("0.2%% 5xx is fine: %+v", e)
+	}
+	if e := buildErrorHealth(mk(1000, 20)); e.Level != HealthFair || e.Rate != 2 {
+		t.Errorf("2%% 5xx should read as some errors: %+v", e)
+	}
+	if e := buildErrorHealth(mk(1000, 30)); e.Level != HealthSlow {
+		t.Errorf("3%% 5xx should read as many errors: %+v", e)
+	}
+	if e := buildErrorHealth(mk(1000, 100)); e.Level != HealthStruggle || e.Score != 0 {
+		t.Errorf("10%% 5xx is failing: %+v", e)
 	}
 }

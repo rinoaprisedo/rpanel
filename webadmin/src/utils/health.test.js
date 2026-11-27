@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeHealth } from './health'
+import { computeHealth, trafficGauge } from './health'
 
 const idle = { cpu_percent: 2, cpu_cores: 2, load5: 0.02, mem_percent: 23, swap_total: 0, swap_used: 0, disks: [{ mount: '/', percent: 17 }] }
 
@@ -45,5 +45,16 @@ describe('computeHealth', () => {
   it('falls back to the server verdict until the overview loads', () => {
     const s = { score: 90 }
     expect(computeHealth(undefined, [], s)).toBe(s)
+  })
+})
+
+describe('trafficGauge', () => {
+  it('rests at the left when quiet and sweeps right as traffic grows', () => {
+    expect(trafficGauge(0).score).toBe(0)
+    expect(trafficGauge(500).label).toBe('Quiet')
+    expect(trafficGauge(10 * 1024).score).toBe(20)
+    expect(trafficGauge(1024 * 1024).score).toBe(60)
+    expect(trafficGauge(1024 ** 3).score).toBe(100)
+    expect(trafficGauge(1024 * 1024).value).toBe('1.0 MB/s')
   })
 })

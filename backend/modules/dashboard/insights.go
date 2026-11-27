@@ -70,6 +70,7 @@ type InsightsResponse struct {
 	Updates  Updates       `json:"updates"`
 	Firewall Firewall      `json:"firewall"`
 	Health   Health        `json:"health"`
+	Errors   ErrorHealth   `json:"errors"`
 	Release  Release       `json:"release"`
 }
 
@@ -399,7 +400,7 @@ func (p *Probes) Build(ctx context.Context, c *Collector) InsightsResponse {
 	}
 	in := insightInput{Overview: c.Overview(), Recent: c.History(), TopMem: top, Sites: sites, Services: svc, Updates: up, Firewall: fw, Traffic1h: tr, Release: rel}
 	return InsightsResponse{
-		Insights: buildInsights(in), Health: buildHealth(in),
+		Insights: buildInsights(in), Health: buildHealth(in), Errors: buildErrorHealth(tr),
 		Sites: sites, Services: svc, Updates: up, Firewall: fw, Release: rel,
 	}
 }
