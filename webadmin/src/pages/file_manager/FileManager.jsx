@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { ArrowUp, RefreshCw, FolderPlus, FilePlus, Upload, Trash2, Copy, Scissors, ClipboardPaste, Archive, Search, X, TerminalSquare } from 'lucide-react'
@@ -12,6 +11,8 @@ import Skeleton from '../../components/ui/Skeleton'
 import CodeEditor from '../../components/ui/CodeEditor'
 import RowActions from './RowActions'
 import UploadFlow from './UploadFlow'
+import UploadPicker from './UploadPicker'
+import TerminalModal from './TerminalModal'
 import usePermission from '../../hooks/usePermission'
 import useAuthStore from '../../store/authStore'
 import { isImage } from '../../utils/highlight'
@@ -33,12 +34,13 @@ function useDebounced(value, ms) {
 
 function FileManager() {
   const qc = useQueryClient()
-  const navigate = useNavigate()
   const { canCreate } = usePermission()
   const userKey = useAuthStore((s) => s.user?.uuid || s.user?.id || 'me')
   const lastKey = `rpanel-fm-path:${userKey}` // reopen where the user left off
   const [path, setPath] = useState(() => localStorage.getItem(lastKey))
   const [upload, setUpload] = useState(null) // { dir, files }
+  const [picker, setPicker] = useState(false) // upload popup with the drop zone
+  const [shell, setShell] = useState(null) // folder the terminal popup is open in
   const [selected, setSelected] = useState([])
   const [clip, setClip] = useState(null) // { op: 'copy'|'move', paths }
   const [prompt, setPrompt] = useState(null) // { title, label, value, onSubmit }
@@ -48,7 +50,6 @@ function FileManager() {
   const [query, setQuery] = useState('')
   const [deep, setDeep] = useState(false) // also search inside sub-folders
   const [moreFor, setMoreFor] = useState(null) // path whose "More" menu is open
-  const fileInput = useRef(null)
   // Scroll position of each folder we left, so going back (Up, breadcrumb) lands where you were
   // instead of at the top. `restore` is the position to apply once the next folder has rendered.
   const scrollMemory = useRef(new Map())
@@ -182,17 +183,9 @@ function FileManager() {
         <Button variant="secondary" onClick={refresh}><RefreshCw size={14} /></Button>
         <Button variant="secondary" onClick={() => ask('New folder', 'Name', '', (v) => api.mkdir(join(cwd, v)))}><FolderPlus size={14} />Folder</Button>
         <Button variant="secondary" onClick={() => ask('New file', 'Name', '', (v) => api.touch(join(cwd, v)))}><FilePlus size={14} />File</Button>
-        <Button variant="secondary" onClick={() => fileInput.current?.click()}><Upload size={14} />Upload</Button>
-        <input
-          ref={fileInput} type="file" multiple hidden
-          onChange={(e) => {
-            const files = [...e.target.files]
-            e.target.value = ''
-            if (files.length) setUpload({ dir: cwd, files })
-          }}
-        />
+        <Button variant="secondary" disabled={!cwd} onClick={() => setPicker(true)}><Upload size={14} />Upload</Button>
         {canCreate('terminal') && (
-          <Button variant="secondary" disabled={!cwd} title="Open a terminal in this folder" onClick={() => navigate(`/terminal?cwd=${encodeURIComponent(cwd)}`)}><TerminalSquare size={14} />Terminal</Button>
+          <Button variant="secondary" disabled={!cwd} title="Open a terminal in this folder" onClick={() => setShell(cwd)}><TerminalSquare size={14} />Terminal</Button>
         )}
         <span className="mx-1 h-5 w-px bg-surface-border" />
         <Button variant="secondary" disabled={!selected.length} onClick={() => stash('copy', selected)}><Copy size={14} />Copy</Button>
@@ -281,6 +274,11 @@ function FileManager() {
         )}
       </div>
       {truncated && <p className="text-xs text-text-tertiary">Showing the first matches only. Narrow the search or open a deeper folder.</p>}
+
+      {picker && (
+        <UploadPicker dir={cwd} onClose={() => setPicker(false)} onPick={(files) => { setPicker(false); setUpload({ dir: cwd, files }) }} />
+      )}
+      {shell && <TerminalModal cwd={shell} onClose={() => setShell(null)} />}
 
       {upload && (
         <UploadFlow
