@@ -248,6 +248,7 @@ func (s *Service) IssueSSL(ctx context.Context, uuid, email string, actor *uint6
 	if err := os.MkdirAll(s.cfg.AcmeRoot, 0o755); err != nil {
 		return nil, err
 	}
+	panelssl.OpenWebPorts(ctx, s.run)
 	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", s.certbotArgs(w.Domain, reg)...)
 	if err != nil {
 		msg, _ := summarizeCertbotFailure(res.Stdout + "\n" + res.Stderr)

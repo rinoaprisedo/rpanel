@@ -224,6 +224,9 @@ func (s *Service) issueWithProgress(ctx context.Context, j *SSLJob, w *Website, 
 		return err
 	}
 	j.logf("nginx serves http://%s/.well-known/acme-challenge/", w.Domain)
+	if note := panelssl.OpenWebPorts(ctx, s.run); note != "" {
+		j.logf("%s", note)
+	}
 	j.step("prepare", StepDone, "", 25)
 
 	// 3. certbot (progress creeps towards 85% while it runs; there is no real signal inside certbot)

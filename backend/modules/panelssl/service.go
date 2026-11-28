@@ -385,6 +385,7 @@ func (s *Service) IssueLetsEncrypt(ctx context.Context, domain, email string) er
 	if err != nil {
 		return err
 	}
+	OpenWebPorts(ctx, s.run)
 	args := append([]string{"certonly", "--webroot", "-w", s.cfg.AcmeRoot, "-d", d, "--non-interactive", "--agree-tos", "--keep-until-expiring"}, reg...)
 	res, err := s.run.Run(ctx, 5*time.Minute, "certbot", args...)
 	if err != nil {

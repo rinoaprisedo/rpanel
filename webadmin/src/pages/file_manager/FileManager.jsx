@@ -181,17 +181,17 @@ function FileManager() {
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" onClick={() => go(parentOf(cwd))} disabled={!cwd || cwd === '/'}><ArrowUp size={14} /></Button>
         <Button variant="secondary" onClick={refresh}><RefreshCw size={14} /></Button>
-        <Button variant="secondary" onClick={() => ask('New folder', 'Name', '', (v) => api.mkdir(join(cwd, v)))}><FolderPlus size={14} />Folder</Button>
-        <Button variant="secondary" onClick={() => ask('New file', 'Name', '', (v) => api.touch(join(cwd, v)))}><FilePlus size={14} />File</Button>
-        <Button variant="secondary" disabled={!cwd} onClick={() => setPicker(true)}><Upload size={14} />Upload</Button>
+        <Button variant="secondary" onClick={() => ask('New folder', 'Name', '', (v) => api.mkdir(join(cwd, v)))}><FolderPlus size={14} className="text-amber-500" />Folder</Button>
+        <Button variant="secondary" onClick={() => ask('New file', 'Name', '', (v) => api.touch(join(cwd, v)))}><FilePlus size={14} className="text-sky-500" />File</Button>
+        <Button variant="secondary" disabled={!cwd} onClick={() => setPicker(true)}><Upload size={14} className="text-success" />Upload</Button>
         {canCreate('terminal') && (
-          <Button variant="secondary" disabled={!cwd} title="Open a terminal in this folder" onClick={() => setShell(cwd)}><TerminalSquare size={14} />Terminal</Button>
+          <Button variant="secondary" disabled={!cwd} title="Open a terminal in this folder" onClick={() => setShell(cwd)}><TerminalSquare size={14} className="text-violet-500" />Terminal</Button>
         )}
         <span className="mx-1 h-5 w-px bg-surface-border" />
-        <Button variant="secondary" disabled={!selected.length} onClick={() => stash('copy', selected)}><Copy size={14} />Copy</Button>
-        <Button variant="secondary" disabled={!selected.length} onClick={() => stash('move', selected)}><Scissors size={14} />Cut</Button>
-        <Button variant="secondary" disabled={!clip || busy} onClick={() => run(async () => { await (clip.op === 'copy' ? api.copyPaths : api.movePaths)(clip.paths, cwd); setClip(null) }, 'Done')}><ClipboardPaste size={14} />Paste{clip ? ` (${clip.paths.length})` : ''}</Button>
-        <Button variant="secondary" disabled={!selected.length} onClick={() => ask('Compress to zip', 'Archive name', 'archive.zip', (v) => api.compressPaths(selected, join(cwd, v)))}><Archive size={14} />Zip</Button>
+        <Button variant="secondary" disabled={!selected.length} onClick={() => stash('copy', selected)}><Copy size={14} className="text-sky-500" />Copy</Button>
+        <Button variant="secondary" disabled={!selected.length} onClick={() => stash('move', selected)}><Scissors size={14} className="text-orange-500" />Cut</Button>
+        <Button variant="secondary" disabled={!clip || busy} onClick={() => run(async () => { await (clip.op === 'copy' ? api.copyPaths : api.movePaths)(clip.paths, cwd); setClip(null) }, 'Done')}><ClipboardPaste size={14} className="text-success" />Paste{clip ? ` (${clip.paths.length})` : ''}</Button>
+        <Button variant="secondary" disabled={!selected.length} onClick={() => ask('Compress to zip', 'Archive name', 'archive.zip', (v) => api.compressPaths(selected, join(cwd, v)))}><Archive size={14} className="text-amber-500" />Zip</Button>
         <Button variant="danger" disabled={!selected.length} onClick={() => setConfirm(selected)}><Trash2 size={14} />Delete</Button>
 
         <div className="ml-auto flex items-center gap-3">
